@@ -1,11 +1,11 @@
 {
-    "Node": [
+    "nodes": [
         {
-            "Name": "TestStringOverrideNode",
-            "Version": 1,
-            "DisplayName": "Test String Override Node",
-            "Tooltip": "Overridden Tooltip",
-            "HasPreview": false
+            "name": "TestStringOverrideNode",
+            "version": 1,
+            "displayName": "Test String Override Node",
+            "tooltip": "Overridden Tooltip",
+            "hasPreview": false
         }
     ]
 }

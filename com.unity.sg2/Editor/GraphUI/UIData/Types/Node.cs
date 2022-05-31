@@ -2,11 +2,11 @@ using UnityEngine;
 
 public class Node
 {
-    public int Version;
-    public string Name;
-    public string DisplayName;
-    public string Tooltip;
-    public bool HasPreview;
+    public string name;
+    public int version;
+    public string displayName;
+    public string tooltip;
+    public bool hasPreview;
 
     public static Node CreateFromJSON(string jsonString)
     {

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace UnityEditor.ShaderGraph.GraphUI.UIData
 {
@@ -9,10 +10,14 @@ namespace UnityEditor.ShaderGraph.GraphUI.UIData
         private UI() { }
 
         // Adds a string file source to the accessible strings.
-        public static void AddSource(string filePath)
+        public static void AddSource(TextAsset jsonTextAsset)
         {
-            // parse JSON
-            // add all values (last wins)
+            Nodes nodesInJson = JsonUtility.FromJson<Nodes>(jsonTextAsset.text);
+            foreach (var node in nodesInJson.nodes)
+            {
+                strings[$"nodes.{node.name}.tooltip"] = node.tooltip;
+                // TODO (Brett) ...
+            }
         }
 
         // Returns a string that is supposed to go in the UI.

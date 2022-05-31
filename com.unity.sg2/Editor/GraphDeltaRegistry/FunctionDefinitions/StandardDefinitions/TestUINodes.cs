@@ -38,7 +38,24 @@ namespace UnityEditor.ShaderGraph.Defs
             categories: new string[] { "Test" },
             synonyms: Array.Empty<string>(),
             displayName: "Test String Override Node",
-            hasPreview: false
+            hasPreview: false,
+            parameters: new ParameterUIDescriptor[2] {
+                new ParameterUIDescriptor(
+                    name: "In",
+                    displayName: "In",
+                    tooltip: "In",
+                    useColor: true,
+                    useSlider: false
+                ),
+                new ParameterUIDescriptor(
+                    name: "Out",
+                    displayName: "Out",
+                    tooltip: String.Empty,
+                    useColor: true,
+                    useSlider: false
+                )
+            }
+
         );
     }
 
