@@ -4,6 +4,44 @@ using UnityEngine;
 
 namespace UnityEditor.ShaderGraph.Defs
 {
+    internal class TestStringOverrideNode : IStandardNode
+    {
+        static string Name = "TestStringOverrideNode";
+        static int Version = 1;
+        public static NodeDescriptor NodeDescriptor => new(
+            Version,
+            Name,
+            new FunctionDescriptor[]
+            {
+                new (
+                    Version,
+                    Name,
+                    "Out = In;",
+                    new ParameterDescriptor(
+                        name: "In",
+                        type: TYPE.Vec4,
+                        usage: GraphType.Usage.In
+                    ),
+                    new ParameterDescriptor(
+                        name: "Out",
+                        type: TYPE.Vec4,
+                        usage: GraphType.Usage.Out
+                    )
+                )
+            }
+        );
+
+        public static NodeUIDescriptor NodeUIDescriptor => new(
+            Version,
+            Name,
+            tooltip: "Initial Tooltip",
+            categories: new string[] { "Test" },
+            synonyms: Array.Empty<string>(),
+            displayName: "Test String Override Node",
+            hasPreview: false
+        );
+    }
+
     internal class TestUIReferrablesNode : IStandardNode
     {
         static string Name = "TestUIReferrablesNode";
