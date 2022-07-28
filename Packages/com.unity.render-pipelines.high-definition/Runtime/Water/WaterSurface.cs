@@ -3,6 +3,8 @@ using Unity.Mathematics;
 using System.Collections.Generic;
 using UnityEditor;
 
+// using CSVReader; // TODO: Revisar todo esto
+
 namespace UnityEngine.Rendering.HighDefinition
 {
     /// <summary>
@@ -569,6 +571,22 @@ namespace UnityEngine.Rendering.HighDefinition
         /// </summary>
         [Tooltip("Sets the multiplier for the  Absorption Distance when the camera is under water. A value of 2.0 means you will see twice as far underwater.")]
         public float absorbtionDistanceMultiplier = 1.0f;
+
+        /// <summary>
+        /// Medium spectral coefficients CSV path.
+        /// </summary>
+        [Tooltip("Medium spectral coefficients CSV path.")]
+        public string mediumSpectralCoefsPath = "Assets/Data/medium.csv";
+        /// <summary>
+        /// Camera response curve CSV path.
+        /// </summary>
+        [Tooltip("Camera response curve CSV path.")]
+        public string cameraResponseCurvePath = "Assets/Data/responseCurve.csv";
+        public SpectralData spectralData;
+
+        [Tooltip("Number of wavelengths for spectral rendering (more is more expensive).")]
+        public int numberWavelengths = 8;
+
         #endregion
 
         // Internal simulation data
@@ -714,18 +732,35 @@ namespace UnityEngine.Rendering.HighDefinition
         {
             // Add this water surface to the internal surface management
             RegisterInstance(this);
+
+
+            LoadSpectralData();
+        }
+
+        private void LoadSpectralData() {
+            Debug.Log("Loading Spectral data!");
+            // As list<list<float>
+            spectralData = new SpectralData();
+            spectralData.LoadResponseCurve(cameraResponseCurvePath);
+            spectralData.LoadMedium(mediumSpectralCoefsPath);
+            spectralData.SetNWavelengths(numberWavelengths);
+
+            spectralData.PrintCurves();
         }
 
         private void Awake()
         {
             // Add this water surface to the internal surface management
             RegisterInstance(this);
+
+            LoadSpectralData();
         }
 
         private void OnEnable()
         {
             // Add this water surface to the internal surface management
             RegisterInstance(this);
+            LoadSpectralData();
         }
 
         private void OnDisable()

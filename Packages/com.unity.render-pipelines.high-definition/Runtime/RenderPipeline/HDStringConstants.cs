@@ -387,6 +387,8 @@ namespace UnityEngine.Rendering.HighDefinition
         public static readonly int _ShaderVariablesClouds = Shader.PropertyToID("ShaderVariablesClouds");
         public static readonly int _ShaderVariablesWater = Shader.PropertyToID("ShaderVariablesWater");
         public static readonly int _ShaderVariablesUnderWater = Shader.PropertyToID("ShaderVariablesUnderWater");
+        // NEW: For spectral coeficients:
+        public static readonly int _ShaderVariablesUnderWaterSpectral = Shader.PropertyToID("ShaderVariablesUnderWaterSpectral");
         public static readonly int _ShaderVariablesWaterRendering = Shader.PropertyToID("ShaderVariablesWaterRendering");
 
         public static readonly int _SSSBufferTexture = Shader.PropertyToID("_SSSBufferTexture");

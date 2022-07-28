@@ -10,6 +10,7 @@ namespace UnityEngine.Rendering.HighDefinition
 
         void EvaluateUnderWaterSurface(HDCamera hdCamera)
         {
+            // //Debug.Log("Evaluating Underwater Surface :D");
             // Flag that allows us to track which surface is the one we will be using for the under water rendering
             m_UnderWaterSurfaceIndex = -1;
 
@@ -19,8 +20,10 @@ namespace UnityEngine.Rendering.HighDefinition
 
             // If the water is disabled , no need to render or simulate
             WaterRendering settings = hdCamera.volumeStack.GetComponent<WaterRendering>();
-            if (!settings.enable.value || !hdCamera.frameSettings.IsEnabled(FrameSettingsField.Water) || numWaterSurfaces == 0)
+            if (!settings.enable.value || !hdCamera.frameSettings.IsEnabled(FrameSettingsField.Water) || numWaterSurfaces == 0){
+                //Debug.Log("Not enabled");
                 return;
+            }
 
             // Grab the camera's world space position
             Vector3 cameraWSPos = hdCamera.camera.transform.position;
@@ -86,7 +89,12 @@ namespace UnityEngine.Rendering.HighDefinition
             public ComputeShader waterLightingCS;
             public int underWaterKernel;
             public ShaderVariablesWaterRendering waterRenderingCB;
+
             public ShaderVariablesUnderWater underWaterCB;
+
+            // NEW: Now I use the Spectral struct for the wl dependent coefs
+            public ShaderVariablesUnderWaterSpectral underWaterSpectralCB;
+
             public ShaderVariablesWater waterCB;
 
             public TextureHandle colorBuffer;
@@ -98,11 +106,15 @@ namespace UnityEngine.Rendering.HighDefinition
             public TextureHandle outputColorBuffer;
         }
 
-        TextureHandle RenderUnderWaterVolume(RenderGraph renderGraph, HDCamera hdCamera, TextureHandle colorBuffer, TextureHandle depthBuffer)
+        unsafe TextureHandle RenderUnderWaterVolume(RenderGraph renderGraph, HDCamera hdCamera, TextureHandle colorBuffer, TextureHandle depthBuffer)
         {
             // Are we in the volume of any surface at all?
-            if (m_UnderWaterSurfaceIndex == -1 || WaterSurface.instancesAsArray == null || !hdCamera.frameSettings.IsEnabled(FrameSettingsField.Water))
-                return colorBuffer;
+            if (m_UnderWaterSurfaceIndex == -1 || WaterSurface.instancesAsArray == null || !hdCamera.frameSettings.IsEnabled(FrameSettingsField.Water)) {
+                  //Debug.Log("[RenderUnderWaterVolume] nope 1" + (m_UnderWaterSurfaceIndex == -1) + (WaterSurface.instancesAsArray == null) + !hdCamera.frameSettings.IsEnabled(FrameSettingsField.Water));
+
+                  return colorBuffer;
+            }
+            //Debug.Log("[RenderUnderWaterVolume] yes 1");
 
             // Execute the unique lighting pass
             using (var builder = renderGraph.AddRenderPass<UnderWaterRenderingData>("Render Under Water", out var passData, ProfilingSampler.Get(HDProfileId.WaterSurfaceRenderingUnderWater)))
@@ -118,6 +130,34 @@ namespace UnityEngine.Rendering.HighDefinition
                 passData.underWaterKernel = m_UnderWaterKernel;
 
                 // Fill the under water CB
+                // NEW: wl dependent coefs here:
+                // passData.underWaterCB._WaterScat = new float[]{0.1f, 0.4f, 0.5f, 0.7f}; // TODO: Input
+
+                // Array buffers have to be filled in loops (apparently)
+                // Example cb._FrustumPlanes in https://github.com/Unity-Technologies/Graphics/blob/223d8105e68c5a808027d78f39cb4e2545fd6276/Packages/com.unity.render-pipelines.high-definition/Runtime/RenderPipeline/Camera/HDCamera.cs
+                // for (int i = 0; i < WaterConsts.k_NWavelengths; ++i) { // Each wl
+                //     // Medium coefs:
+                //     passData.underWaterSpectralCB._WaterScatExtDw[i * 4] = WaterConsts.k_Scat[i];
+                //     passData.underWaterSpectralCB._WaterScatExtDw[i * 4 + 1] = WaterConsts.k_Ext[i];
+                //     passData.underWaterSpectralCB._WaterScatExtDw[i * 4 + 2] = WaterConsts.k_DownWelling[i];
+                //     // Camera response curve:
+                //     passData.underWaterSpectralCB._ResponseCurve[i * 4] = WaterConsts.k_ResponseCurve[i].x;
+                //     passData.underWaterSpectralCB._ResponseCurve[i * 4 + 1] = WaterConsts.k_ResponseCurve[i].y;
+                //     passData.underWaterSpectralCB._ResponseCurve[i * 4 + 2] = WaterConsts.k_ResponseCurve[i].z;
+                // }
+                passData.underWaterSpectralCB._NWavelengths = waterSurface.numberWavelengths;
+                var medium = waterSurface.spectralData.GetMediumCoefs();
+                var responseCurve = waterSurface.spectralData.GetResponseCurve();
+                for (int i = 0; i < waterSurface.numberWavelengths; ++i) { // Each wl
+                    // Medium coefs:
+                    passData.underWaterSpectralCB._WaterScatExtDw[i * 4] = medium[1][i];
+                    passData.underWaterSpectralCB._WaterScatExtDw[i * 4 + 1] = medium[2][i];
+                    passData.underWaterSpectralCB._WaterScatExtDw[i * 4 + 2] = medium[3][i];
+                    // Camera response curve:
+                    passData.underWaterSpectralCB._ResponseCurve[i * 4] = responseCurve[1][i];
+                    passData.underWaterSpectralCB._ResponseCurve[i * 4 + 1] = responseCurve[2][i];
+                    passData.underWaterSpectralCB._ResponseCurve[i * 4 + 2] = responseCurve[3][i];
+                }
                 passData.underWaterCB._MaxViewDistanceMultiplier = waterSurface.absorbtionDistanceMultiplier;
                 passData.underWaterCB._WaterScatteringColor = waterSurface.scatteringColor;
                 passData.underWaterCB._WaterRefractionColor = waterSurface.refractionColor;
@@ -154,6 +194,8 @@ namespace UnityEngine.Rendering.HighDefinition
 
                         // Bind the input gbuffer data
                         ConstantBuffer.Push(ctx.cmd, data.underWaterCB, data.waterLightingCS, HDShaderIDs._ShaderVariablesUnderWater);
+                        // Same for spectral:
+                        ConstantBuffer.Push(ctx.cmd, data.underWaterSpectralCB, data.waterLightingCS, HDShaderIDs._ShaderVariablesUnderWaterSpectral); // Should be UnderwaterSpectral?
                         ConstantBuffer.Push(ctx.cmd, data.waterRenderingCB, data.waterLightingCS, HDShaderIDs._ShaderVariablesWaterRendering);
                         ConstantBuffer.Push(ctx.cmd, data.waterCB, data.waterLightingCS, HDShaderIDs._ShaderVariablesWater);
                         ctx.cmd.SetComputeTextureParam(data.waterLightingCS, data.underWaterKernel, HDShaderIDs._WaterCausticsDataBuffer, data.causticsData);

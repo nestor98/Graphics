@@ -94,7 +94,23 @@ namespace UnityEngine.Rendering.HighDefinition
             0f, 0f, 3.466048E-16f, 0.0002757984f, 0.07301058f, 0.5810083f, 1.590872f, 2.889345f, 4.348913f, 5.903265f, 7.540101f, 9.294528f, 11.19862f, 13.30132f, 15.57237f, 17.95442f, 20.38092f, 22.79476f, 25.19281f, 27.56402f, 29.95196f, 32.41065f, 35.00351f, 37.80022f, 40.75069f, 43.83775f, 47.04081f, 50.30617f, 53.56975f, 56.76492f, 59.88307f, 62.8869f,
             0f, 0f, 3.565781E-17f, 0.0001705384f, 0.06073458f, 0.5260445f, 1.512204f, 2.818909f, 4.289411f, 5.855178f, 7.519925f, 9.289353f, 11.18376f, 13.24182f, 15.48364f, 17.85008f, 20.33566f, 22.85831f, 25.345f, 27.78366f, 30.21792f, 32.66293f, 35.18232f, 37.86638f, 40.71719f, 43.73797f, 46.93105f, 50.21576f, 53.50548f, 56.77405f, 59.9977f, 63.11657f,
             0f, 0f, 3.398541E-18f, 0.0001041713f, 0.05119007f, 0.4937522f, 1.472545f, 2.773492f, 4.258455f, 5.857123f, 7.523153f, 9.283202f, 11.19288f, 13.24743f, 15.47529f, 17.87516f, 20.36746f, 22.87952f, 25.36941f, 27.85065f, 30.33868f, 32.83906f, 35.45756f, 38.22281f, 41.11535f, 44.21394f, 47.44939f, 50.79641f, 54.21289f, 57.59188f, 60.92396f, 64.16597f};
+
+        // NEW: Number of wavelengths for the spectral underwater rendering
+        public const int k_NWavelengths = 4;
+        // Medium spectral coefs:
+        public static readonly float[] k_Scat = new float[] {0.1f,0.1f,0.3f,0.4f};
+        public static readonly float[] k_Ext = new float[] {0.1f,0.1f,0.3f,0.4f};
+        public static readonly float[] k_DownWelling = new float[] {0.1f,0.1f,0.3f,0.4f};
+        // Camera response curve:
+        public static readonly Vector3[] k_ResponseCurve = new Vector3[] {
+          new Vector3(0.1f,0.2f,0.9f),
+          new Vector3(0.15f,0.5f,0.7f),
+          new Vector3(0.4f,0.9f,0.6f),
+          new Vector3(0.8f,0.2f,0.2f)
+        };
     }
+
+
 
     // This structure holds all the information that can be requested during the deferred water lighting
     [GenerateHLSL(PackingRules.Exact, false)]
@@ -286,5 +302,34 @@ namespace UnityEngine.Rendering.HighDefinition
         public float _WaterTransitionSize;
         // Padding
         public float _PaddingUW;
+    }
+
+
+    [GenerateHLSL(needAccessors = false, generateCBuffer = true)]
+    unsafe struct ShaderVariablesUnderWaterSpectral
+    {
+        // Followed this: https://github.com/Unity-Technologies/Graphics/blob/f74d58f39fa78d5457081b6dbfd43887a153076a/Packages/com.unity.render-pipelines.high-definition/Runtime/ShaderLibrary/ShaderVariablesGlobal.cs
+        // And its advice on using padded Vector4s and NEVER Vector3 (padding is API dependant, OpenGL!=Vulkan, etc.)
+
+        // [Scattering, extinction, Diff Downwelling, -]
+        [HLSLArray(WaterConsts.k_NWavelengths, typeof(Vector4))]
+        public fixed float _WaterScatExtDw[WaterConsts.k_NWavelengths*4];
+        // Camera response curve:
+        [HLSLArray(WaterConsts.k_NWavelengths, typeof(Vector4))]
+        public fixed float _ResponseCurve[WaterConsts.k_NWavelengths*4]; // [R,G,B,-]
+
+        public int _NWavelengths; 
+
+        //
+        // // Refraction color of the water surface
+        // public Vector4 _WaterRefractionColor;
+        // // Scattering color of the water surface
+        // public Vector4 _WaterScatteringColor;
+        //
+        // // Multiplier of the view distance when under water
+        // public float _MaxViewDistanceMultiplier;
+        // // Scattering coefficent for the absorption
+        // public float _OutScatteringCoeff;
+        // Vertical transition size of the water
     }
 }
