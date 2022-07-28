@@ -576,12 +576,12 @@ namespace UnityEngine.Rendering.HighDefinition
         /// Medium spectral coefficients CSV path.
         /// </summary>
         [Tooltip("Medium spectral coefficients CSV path.")]
-        public string mediumSpectralCoefsPath = "Assets/Data/medium.csv";
+        public string mediumSpectralCoefsPath = "Assets/Data/medium-spectral-data/waterType_Jerlov1C_properties.csv";
         /// <summary>
         /// Camera response curve CSV path.
         /// </summary>
         [Tooltip("Camera response curve CSV path.")]
-        public string cameraResponseCurvePath = "Assets/Data/responseCurve.csv";
+        public string cameraResponseCurvePath = "Assets/Data/response-curves/Arriflex D21.csv";
         public SpectralData spectralData;
 
         [Tooltip("Number of wavelengths for spectral rendering (more is more expensive).")]

@@ -223,6 +223,7 @@ void UnderWater(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 groupThreadI
     // const float3 clearColor = camColor.xyz * (1.0 + caustics) * exp(-(1.0-_WaterRefractionColor.xyz));
     // float3 underWaterColor = lerp(farColor, clearColor, waterAbsorption);
     float3 underWaterColor = float3(0.0,0.0,0.0);
+    // TODO: TIMEOUT. Maybe _NWavelengths is not set??
     for (int i = 0; i < _NWavelengths; i++) { // For each wavelength
       // Input vectors are float4, last one empty:
       float scat = _WaterScatExtDw[i].x,
