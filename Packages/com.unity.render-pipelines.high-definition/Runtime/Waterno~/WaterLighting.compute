@@ -145,6 +145,74 @@ void WaterDeferredLighting(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 g
     _CameraColorTextureRW[COORD_TEXTURE2D_X(currentCoord)] = float4(finalColor, 1.0);
 }
 
+float L_medium(float3 w, float T, float distanceToSurface, float scat, float ext, float dw) {
+  w.y = abs(w.y); // preguntar, probar -abs
+  return -(scat * exp(-dw * distanceToSurface)) / (4.0*PI * (ext + dw*w.y))
+         * (exp(-(ext + dw*w.y) * T) - 1.0);
+}
+// RTE integral -> inscattering... antiderivadas etc
+// Single scattering con sombras (aprox etc)
+
+float3 L_surface(float3 kd, float T, float pointToSurface, float ext, float dw) {
+  // return float3(0.0,0.0,0.0);
+  // return kd;
+  // if (w.y>0) return kd;
+
+  return kd * exp(-dw * pointToSurface) / PI * exp(-ext*T);
+}
+
+// From: https://github.com/kbinani/colormap-shaders/blob/master/shaders/glsl/transform_rainbow.frag
+// Goes from blue to red for x in [0,1]
+float3 colormap(float x) {
+    x = clamp(x,0.0,1.0);
+
+    float r = 0.0, g = 0.0, b = 0.0;
+
+    if (x < 0.0) {
+        r = 127.0 / 255.0;
+    } else if (x <= 1.0 / 9.0) {
+        r = 1147.5 * (1.0 / 9.0 - x) / 255.0;
+    } else if (x <= 5.0 / 9.0) {
+        r = 0.0;
+    } else if (x <= 7.0 / 9.0) {
+        r = 1147.5 * (x - 5.0 / 9.0) / 255.0;
+    } else {
+        r = 1.0;
+    }
+
+    if (x <= 1.0 / 9.0) {
+        g = 0.0;
+    } else if (x <= 3.0 / 9.0) {
+        g = 1147.5 * (x - 1.0 / 9.0) / 255.0;
+    } else if (x <= 7.0 / 9.0) {
+        g = 1.0;
+    } else if (x <= 1.0) {
+        g = 1.0 - 1147.5 * (x - 7.0 / 9.0) / 255.0;
+    } else {
+        g = 0.0;
+    }
+
+    if (x <= 3.0 / 9.0) {
+        b = 1.0;
+    } else if (x <= 5.0 / 9.0) {
+        b = 1.0 - 1147.5 * (x - 3.0 / 9.0) / 255.0;
+    } else {
+        b = 0.0;
+    }
+
+    return float3(r, g, b);
+}
+
+float3 encodeSRGB(float3 linearRGB)
+{
+    // default gamma=2.4
+    float3 a = 12.92 * linearRGB;
+    float3 b = 1.055 * pow(linearRGB, (1.0 / 2.4).xxx) - 0.055;
+    float3 c = step((0.0031308).xxx, linearRGB);
+    return lerp(a, b, c);
+}
+
+
 // Input color value
 TEXTURE2D_X(_CameraColorTexture);
 
@@ -173,33 +241,102 @@ void UnderWater(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 groupThreadI
 
     // Read the depth value
     float depthValue = LOAD_TEXTURE2D_X(_DepthTexture, currentCoord).x;
+
+    // If this is a background pixel or an invalid ray, leave right away
+    uint isBackground = 0;
+    if (depthValue == UNITY_RAW_FAR_CLIP_VALUE)
+        isBackground = 1;
+
     PositionInputs posInput = GetPositionInput(currentCoord, _ScreenSize.zw, depthValue, UNITY_MATRIX_I_VP, GetWorldToViewMatrix(), 0);
+
+    // depthValue = LinearEyeDepth(depth, _ZBufferParams);
+
+    // View direction:
+    float3 viewDirection = GetWorldSpaceNormalizeViewDir(posInput.positionWS);
+
 
     // Evaluate the caustics for this position
     float caustics = 0;
 
     // Read the stencil value
     uint stencilValue = GetStencilValue(LOAD_TEXTURE2D_X(_StencilTexture, currentCoord));
-    if ((stencilValue & 16) ==  0)
-        caustics = EvaluateSimulationCaustics(posInput.positionWS, posInput.positionWS + float3(0, _CausticsPlaneBlendDistance, 0), currentCoord * _ScreenSize.zw);
 
+    if ((stencilValue & 16) ==  0){
+        caustics = EvaluateSimulationCaustics(posInput.positionWS, posInput.positionWS + float3(0, _CausticsPlaneBlendDistance, 0), currentCoord * _ScreenSize.zw);
+    }
     // Evaluate the fog of the target surface
     float cameraDistance = depthValue == UNITY_RAW_FAR_CLIP_VALUE ? _ProjectionParams.z : length(posInput.positionWS);
 
+
+    // New: Pt in solid surface = water surface to camera + camera to point:
+    float pointToSurface = distanceToSurface - viewDirection.y * cameraDistance;
+
+    cameraDistance /= _MaxViewDistanceMultiplier;
     // Evaluate the monochrome absorption
-    float waterAbsorption = exp(-_OutScatteringCoeff * cameraDistance / _MaxViewDistanceMultiplier);
+    // float waterAbsorption = exp(-_OutScatteringCoeff * cameraDistance / _MaxViewDistanceMultiplier);
 
     // Evaluate the underwater color
-    const float3 farColor = _WaterScatteringColor.xyz * UNDER_WATER_SCATTERING_ATTENUATION;
-    const float3 clearColor = camColor.xyz * (1.0 + caustics) * exp(-(1.0-_WaterRefractionColor.xyz));
-    float3 underWaterColor = lerp(farColor, clearColor, waterAbsorption);
+    // const float3 farColor = _WaterScatteringColor.xyz * UNDER_WATER_SCATTERING_ATTENUATION;
+    const float3 clearColor = camColor.xyz * (1.0 + caustics);// * exp(-(1.0-_WaterRefractionColor.xyz));
+    // float3 underWaterColor = lerp(farColor, clearColor, waterAbsorption);
+    float3 underWaterColor = float3(0.0,0.0,0.0);
 
+    for (uint i = 0; i < 8; i++) { // For each wavelength
+      // Input vectors are float4, last one empty:
+      float scat = _WaterScatExtDw[i].x,
+            ext = _WaterScatExtDw[i].y,
+            dw = _WaterScatExtDw[i].z;
+      float3 responseCurve = _ResponseCurve[i].xyz;//float3(_ResponseCurve[i*4],_ResponseCurve[i*4+1],_ResponseCurve[i*4+2]);
+      // float3 w = float3(1.0,0.0,0.0); // TODO: Fix
+      float3 w = viewDirection; // TODO: Fix
+
+      // underWaterColor += responseCurve * kd;
+      underWaterColor += responseCurve * L_medium(w, cameraDistance, -distanceToSurface, scat, ext, dw);
+      if (isBackground==0) { // Add surface
+        // float3 kd = clearColor;//camColor.xyz; // TODO: revisar
+        float3 kd = camColor.xyz;
+        // pointToSurface=50.0;
+        underWaterColor += responseCurve * L_surface(kd, cameraDistance, pointToSurface, ext, dw);
+      }
+    }
     // Evaluate the vertical distance to the water surface
-    float underWaterBlend = saturate(distanceToSurface / _WaterTransitionSize);
+    // float underWaterBlend = saturate(distanceToSurface / _WaterTransitionSize);
 
     // Use (or do not use) the underwater color based on the vertical distance to the surface
-    float3 color = lerp(underWaterColor, camColor.xyz, underWaterBlend * underWaterBlend);
+    // float3 color = lerp(underWaterColor, camColor.xyz, underWaterBlend * underWaterBlend);
+    float3 color = underWaterColor;
+    // float3 color = 0.5*viewDirection+0.5;
+
+
+
+    // Evaluate the fog and combine
+    // float3 volColor, volOpacity;
+    // EvaluateAtmosphericScattering(posInput, viewDirection, volColor, volOpacity);
+    // color = color * (1 - volOpacity) + volColor;
+
+    // color = encodeSRGB(color/8); // Divide by number of wls
+    // COLORMAP tests:
+    // color = colormap(-pointToSurface/10.0); // Dist to surface
+    // color = colormap(cameraDistance/100.0); // Dist to camera
+    // color = colormap(viewDirection.y*0.5+0.5); // view vector.y
+
+
+    // if (isBackground==1) color = float3(1.0,1.0,0.0);
+    // else color = float3(0.0,1.0,1.0);
+
 
     // Output the camera color
     _CameraColorTextureRW[COORD_TEXTURE2D_X(currentCoord)] = float4(color, 1.0);
 }
+
+
+
+//TODO: in c# its 8, here its 0??
+// if (_NWavelengths<1) color = float3(0.0,0.0,0.0);
+// else if (_NWavelengths==8) color = float3(0.0,1.0,0.0);
+// else if (_NWavelengths>100000) color = float3(1.0,0.0,0.0);
+// else color = float3(0.0,0.0,1.0);
+
+// El uint parece que no se quiere pasar bien....
+// Luz ambiental para las superficies, que hacemos con eso???????????????????
+// Modificar lightloop directamente?

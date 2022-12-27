@@ -400,10 +400,24 @@ namespace UnityEngine.Rendering.HighDefinition
             [Reload("Runtime/RenderPipeline/Raytracing/Shaders/Denoising/DiffuseDenoiser.compute")]
             public ComputeShader diffuseDenoiserCS;
 
+
+            // New: UW shaders:
+            [Reload("Runtime/UWOcean/Lighting/shaders/UWDeferred.compute")]
+            public ComputeShader UWdeferredCS;
+            [Reload("Runtime/UWOcean/Lighting/shaders/UWDeferred.Shader")]
+            public Shader UWdeferredPS;
+            // New: UWRGB shaders:
+            [Reload("Runtime/UWOcean/LightingRGB/shaders/UWRGBDeferred.compute")]
+            public ComputeShader UWRGBdeferredCS;
+            [Reload("Runtime/UWOcean/LightingRGB/shaders/UWRGBDeferred.Shader")]
+            public Shader UWRGBdeferredPS;
+
 #if UNITY_EDITOR
             // Furnace Testing (BSDF Energy Conservation)
             [Reload("Tests/Editor/Utilities/FurnaceTests.compute")]
             public ComputeShader furnaceTestCS;
+
+
 #endif
 
 #if UNITY_EDITOR

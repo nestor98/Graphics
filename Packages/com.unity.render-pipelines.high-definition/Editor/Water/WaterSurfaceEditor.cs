@@ -214,9 +214,9 @@ namespace UnityEditor.Rendering.HighDefinition
         SerializedProperty m_TransitionSize;
         SerializedProperty m_AbsorbtionDistanceMultiplier;
         // NEW: Files for spectral data:
-        SerializedProperty m_MediumSpectralCoefsPath;
-        SerializedProperty m_CameraResponseCurvePath;
-        SerializedProperty m_NumberWavelengths;
+        // SerializedProperty m_MediumSpectralCoefsPath;
+        // SerializedProperty m_CameraResponseCurvePath;
+        // SerializedProperty m_NumberWavelengths;
 
         void OnEnable()
         {
@@ -326,9 +326,9 @@ namespace UnityEditor.Rendering.HighDefinition
             m_TransitionSize = o.Find(x => x.transitionSize);
             m_AbsorbtionDistanceMultiplier = o.Find(x => x.absorbtionDistanceMultiplier);
             // NEW: Spectral....
-            m_MediumSpectralCoefsPath = o.Find(x => x.mediumSpectralCoefsPath);
-            m_CameraResponseCurvePath = o.Find(x => x.cameraResponseCurvePath);
-            m_NumberWavelengths = o.Find(x => x.numberWavelengths);
+            // m_MediumSpectralCoefsPath = o.Find(x => x.mediumSpectralCoefsPath);
+            // m_CameraResponseCurvePath = o.Find(x => x.cameraResponseCurvePath);
+            // m_NumberWavelengths = o.Find(x => x.numberWavelengths);
         }
 
         static internal void WaterSurfaceGeneralSection(WaterSurfaceEditor serialized, Editor owner)

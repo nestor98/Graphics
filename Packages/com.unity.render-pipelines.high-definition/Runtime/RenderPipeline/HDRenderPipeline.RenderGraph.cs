@@ -24,6 +24,10 @@ namespace UnityEngine.Rendering.HighDefinition
         int colorMaskTransparentVel;
         int colorMaskAdditionalTarget;
 
+        bool DoUnderWaterPass(Camera cam) {
+            return cam.transform.position.y < 0;
+        }
+
         void RecordRenderGraph(RenderRequest renderRequest,
             AOVRequestData aovRequest,
             List<RTHandle> aovBuffers,
@@ -31,14 +35,21 @@ namespace UnityEngine.Rendering.HighDefinition
             ScriptableRenderContext renderContext,
             CommandBuffer commandBuffer)
         {
-            using (new ProfilingScope(commandBuffer, ProfilingSampler.Get(HDProfileId.RecordRenderGraph)))
+            if (doSpectralUnderwaterPass) { //} && DoUnderWaterPass(camera)) {
+                RecordUnderwaterRenderGraph(renderRequest, aovRequest, aovBuffers, aovCustomPassBuffers, renderContext, commandBuffer);
+                // Debug.Log("Done Underwater Render Graph");
+                return;
+            }
+            else using (new ProfilingScope(commandBuffer, ProfilingSampler.Get(HDProfileId.RecordRenderGraph)))
             {
+                // Debug.Log("Doing Normal HD Render Graph");
                 var hdCamera = renderRequest.hdCamera;
                 var camera = hdCamera.camera;
                 var cullingResults = renderRequest.cullingResults.cullingResults;
                 var customPassCullingResults = renderRequest.cullingResults.customPassCullingResults ?? cullingResults;
                 bool msaa = hdCamera.msaaEnabled;
                 var target = renderRequest.target;
+
 
                 //Set resolution group for the entire frame
                 SetCurrentResolutionGroup(m_RenderGraph, hdCamera, ResolutionGroup.BeforeDynamicResUpscale);
@@ -368,6 +379,8 @@ namespace UnityEngine.Rendering.HighDefinition
             ScriptableRenderContext renderContext,
             CommandBuffer commandBuffer)
         {
+            // m_RenderGraph.Cleanup();
+            // Debug.Log("ExecuteWithRenderGraph");
             using (m_RenderGraph.RecordAndExecute(new RenderGraphParameters
             {
                 executionName = renderRequest.hdCamera.name,

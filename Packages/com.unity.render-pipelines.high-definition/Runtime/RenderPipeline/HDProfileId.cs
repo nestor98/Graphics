@@ -161,6 +161,7 @@ namespace UnityEngine.Rendering.HighDefinition
         UpdateEnvironment,
         ConfigureKeywords,
         RecordRenderGraph,
+        RecordUnderwaterRenderGraph,
 
         PrepareLightsForGPU,
         PrepareGPULightdata,

@@ -397,6 +397,9 @@ namespace UnityEngine.Rendering.HighDefinition
         [FrameSettingsField(3, autoName: ComputeMaterialVariants, positiveDependencies: new[] { DeferredTile }, tooltip: "When enabled, HDRP uses material variant classification to compute lighting.")]
         ComputeMaterialVariants = 125,
 
+        /// <summary>When enabled, HDRP uses tiles to compute deferred lighting.</summary>
+        // [FrameSettingsField(0, autoName: UnderwaterPipeline, tooltip: "When enabled, my underwater spectral pipeline is used.")]
+        // UnderwaterPipeline = 126,
         //only 128 booleans saved. For more, change the BitArray used
     }
 

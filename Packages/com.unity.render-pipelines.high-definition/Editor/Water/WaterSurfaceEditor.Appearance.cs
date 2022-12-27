@@ -157,14 +157,14 @@ namespace UnityEditor.Rendering.HighDefinition
                     serialized.m_AbsorbtionDistanceMultiplier.floatValue = Mathf.Max(serialized.m_AbsorbtionDistanceMultiplier.floatValue, 0.0f);
 
                     // NEW: Spectral data paths. TODO: Validation here, dont think its necessary
-                    EditorGUILayout.PropertyField(serialized.m_MediumSpectralCoefsPath);
-                    // serialized.m_MediumSpectralCoefsPath.stringValue = serialized.m_MediumSpectralCoefsPath.stringValue;
-                    EditorGUILayout.PropertyField(serialized.m_CameraResponseCurvePath);
-                    // Number of wavelengths for spectral rendering:
-                    EditorGUILayout.PropertyField(serialized.m_NumberWavelengths);
-                    // Must be in range [3, 100]
-                    serialized.m_NumberWavelengths.intValue = serialized.m_NumberWavelengths.intValue > 3 ? serialized.m_NumberWavelengths.intValue : 3;
-                    serialized.m_NumberWavelengths.intValue = serialized.m_NumberWavelengths.intValue < 100 ? serialized.m_NumberWavelengths.intValue : 100;
+                    // EditorGUILayout.PropertyField(serialized.m_MediumSpectralCoefsPath);
+                    // // serialized.m_MediumSpectralCoefsPath.stringValue = serialized.m_MediumSpectralCoefsPath.stringValue;
+                    // EditorGUILayout.PropertyField(serialized.m_CameraResponseCurvePath);
+                    // // Number of wavelengths for spectral rendering:
+                    // EditorGUILayout.PropertyField(serialized.m_NumberWavelengths);
+                    // // Must be in range [3, 100]
+                    // serialized.m_NumberWavelengths.intValue = serialized.m_NumberWavelengths.intValue > 3 ? serialized.m_NumberWavelengths.intValue : 3;
+                    // serialized.m_NumberWavelengths.intValue = serialized.m_NumberWavelengths.intValue < 100 ? serialized.m_NumberWavelengths.intValue : 100;
 
 
                 }

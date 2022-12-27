@@ -639,6 +639,7 @@ namespace UnityEngine.Rendering.HighDefinition
 
             m_VisibleVolumeData = null; // free()
             m_VisibleVolumeBounds = null; // free()
+
         }
 
         void InitializeVolumetricLighting()

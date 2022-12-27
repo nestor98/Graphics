@@ -505,6 +505,8 @@ namespace UnityEngine.Rendering.HighDefinition
         ComputeShader buildDispatchIndirectShader { get { return defaultResources.shaders.buildDispatchIndirectCS; } }
         ComputeShader clearDispatchIndirectShader { get { return defaultResources.shaders.clearDispatchIndirectCS; } }
         ComputeShader deferredComputeShader { get { return defaultResources.shaders.deferredCS; } }
+        ComputeShader UWdeferredComputeShader { get { return defaultResources.shaders.UWdeferredCS; } } // NEW: uw
+        ComputeShader UWRGBdeferredComputeShader { get { return defaultResources.shaders.UWRGBdeferredCS; } } // NEW: uw
         ComputeShader contactShadowComputeShader { get { return defaultResources.shaders.contactShadowCS; } }
         Shader screenSpaceShadowsShader { get { return defaultResources.shaders.screenSpaceShadowPS; } }
 
@@ -550,6 +552,14 @@ namespace UnityEngine.Rendering.HighDefinition
 
         static int s_shadeOpaqueDirectFptlKernel;
         static int s_shadeOpaqueDirectFptlDebugDisplayKernel;
+
+        // New: UW:
+        static int s_UWshadeOpaqueDirectFptlKernel;
+        static int s_UWshadeOpaqueDirectFptlDebugDisplayKernel;
+        // New: UWRGB:
+        static int s_UWRGBshadeOpaqueDirectFptlKernel;
+        static int s_UWRGBshadeOpaqueDirectFptlDebugDisplayKernel;
+
         static int s_shadeOpaqueDirectShadowMaskFptlKernel;
         static int s_shadeOpaqueDirectShadowMaskFptlDebugDisplayKernel;
 
@@ -748,6 +758,13 @@ namespace UnityEngine.Rendering.HighDefinition
 
             s_shadeOpaqueDirectFptlKernel = deferredComputeShader.FindKernel("Deferred_Direct_Fptl");
             s_shadeOpaqueDirectFptlDebugDisplayKernel = deferredComputeShader.FindKernel("Deferred_Direct_Fptl_DebugDisplay");
+
+            // New: UW
+            s_UWshadeOpaqueDirectFptlKernel = UWdeferredComputeShader.FindKernel("Deferred_Direct_Fptl");
+            s_UWshadeOpaqueDirectFptlDebugDisplayKernel = UWdeferredComputeShader.FindKernel("Deferred_Direct_Fptl_DebugDisplay");
+            // New: UWRGB
+            s_UWRGBshadeOpaqueDirectFptlKernel = UWRGBdeferredComputeShader.FindKernel("Deferred_Direct_Fptl");
+            s_UWRGBshadeOpaqueDirectFptlDebugDisplayKernel = UWRGBdeferredComputeShader.FindKernel("Deferred_Direct_Fptl_DebugDisplay");
 
             s_deferredContactShadowKernel = contactShadowComputeShader.FindKernel("DeferredContactShadow");
 

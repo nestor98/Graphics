@@ -24,7 +24,7 @@ public static class CSVReader
 
                 for (int i = 0; i < values.Length; i++)
                 {
-                    Debug.Log(values[i]);
+                    // Debug.Log(values[i]);
                     list.Add(new List<float>());
                     list[i].Add(values[i]);
                 }

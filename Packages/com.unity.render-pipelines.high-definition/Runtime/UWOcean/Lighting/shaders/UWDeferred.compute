@@ -1,0 +1,666 @@
+#pragma kernel Deferred_Direct_Fptl                                SHADE_OPAQUE_ENTRY=Deferred_Direct_Fptl
+#pragma kernel Deferred_Direct_Fptl_DebugDisplay                   SHADE_OPAQUE_ENTRY=Deferred_Direct_Fptl_DebugDisplay             DEBUG_DISPLAY
+
+// Variant with and without shadowmask
+#pragma kernel Deferred_Indirect_Fptl_Variant0      SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant0      USE_INDIRECT    VARIANT=0
+#pragma kernel Deferred_Indirect_Fptl_Variant1      SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant1      USE_INDIRECT    VARIANT=1
+#pragma kernel Deferred_Indirect_Fptl_Variant2      SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant2      USE_INDIRECT    VARIANT=2
+#pragma kernel Deferred_Indirect_Fptl_Variant3      SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant3      USE_INDIRECT    VARIANT=3
+#pragma kernel Deferred_Indirect_Fptl_Variant4      SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant4      USE_INDIRECT    VARIANT=4
+#pragma kernel Deferred_Indirect_Fptl_Variant5      SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant5      USE_INDIRECT    VARIANT=5
+#pragma kernel Deferred_Indirect_Fptl_Variant6      SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant6      USE_INDIRECT    VARIANT=6
+#pragma kernel Deferred_Indirect_Fptl_Variant7      SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant7      USE_INDIRECT    VARIANT=7
+#pragma kernel Deferred_Indirect_Fptl_Variant8      SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant8      USE_INDIRECT    VARIANT=8
+#pragma kernel Deferred_Indirect_Fptl_Variant9      SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant9      USE_INDIRECT    VARIANT=9
+#pragma kernel Deferred_Indirect_Fptl_Variant10     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant10     USE_INDIRECT    VARIANT=10
+#pragma kernel Deferred_Indirect_Fptl_Variant11     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant11     USE_INDIRECT    VARIANT=11
+#pragma kernel Deferred_Indirect_Fptl_Variant12     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant12     USE_INDIRECT    VARIANT=12
+#pragma kernel Deferred_Indirect_Fptl_Variant13     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant13     USE_INDIRECT    VARIANT=13
+#pragma kernel Deferred_Indirect_Fptl_Variant14     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant14     USE_INDIRECT    VARIANT=14
+#pragma kernel Deferred_Indirect_Fptl_Variant15     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant15     USE_INDIRECT    VARIANT=15
+#pragma kernel Deferred_Indirect_Fptl_Variant16     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant16     USE_INDIRECT    VARIANT=16
+#pragma kernel Deferred_Indirect_Fptl_Variant17     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant17     USE_INDIRECT    VARIANT=17
+#pragma kernel Deferred_Indirect_Fptl_Variant18     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant18     USE_INDIRECT    VARIANT=18
+#pragma kernel Deferred_Indirect_Fptl_Variant19     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant19     USE_INDIRECT    VARIANT=19
+#pragma kernel Deferred_Indirect_Fptl_Variant20     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant20     USE_INDIRECT    VARIANT=20
+#pragma kernel Deferred_Indirect_Fptl_Variant21     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant21     USE_INDIRECT    VARIANT=21
+#pragma kernel Deferred_Indirect_Fptl_Variant22     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant22     USE_INDIRECT    VARIANT=22
+#pragma kernel Deferred_Indirect_Fptl_Variant23     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant23     USE_INDIRECT    VARIANT=23
+#pragma kernel Deferred_Indirect_Fptl_Variant24     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant24     USE_INDIRECT    VARIANT=24
+#pragma kernel Deferred_Indirect_Fptl_Variant25     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant25     USE_INDIRECT    VARIANT=25
+#pragma kernel Deferred_Indirect_Fptl_Variant26     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant26     USE_INDIRECT    VARIANT=26
+#pragma kernel Deferred_Indirect_Fptl_Variant27     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant27     USE_INDIRECT    VARIANT=27
+#pragma kernel Deferred_Indirect_Fptl_Variant28     SHADE_OPAQUE_ENTRY=Deferred_Indirect_Fptl_Variant28     USE_INDIRECT    VARIANT=28
+
+#pragma multi_compile _ SHADOWS_SHADOWMASK
+#pragma multi_compile SCREEN_SPACE_SHADOWS_OFF SCREEN_SPACE_SHADOWS_ON
+#pragma multi_compile PROBE_VOLUMES_OFF PROBE_VOLUMES_L1 PROBE_VOLUMES_L2
+#pragma multi_compile SHADOW_LOW SHADOW_MEDIUM SHADOW_HIGH
+#pragma multi_compile AREA_SHADOW_MEDIUM AREA_SHADOW_HIGH
+
+#ifdef DEBUG_DISPLAY
+    // Don't care about this warning in debug
+#   pragma warning( disable : 4714 ) // sum of temp registers and indexable temp registers times 256 threads exceeds the recommended total 16384.  Performance may be reduced at kernel
+#endif
+
+// deferred opaque always use FPTL
+#define USE_FPTL_LIGHTLIST 1
+
+// #pragma enable_d3d11_debug_symbols
+
+//-------------------------------------------------------------------------------------
+// Include
+//-------------------------------------------------------------------------------------
+
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/RenderPipeline/ShaderPass/ShaderPass.cs.hlsl"
+#define SHADERPASS SHADERPASS_DEFERRED_LIGHTING
+
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+
+
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/ShaderLibrary/ShaderVariables.hlsl"
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/Lighting.hlsl"
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Material/Material.hlsl"
+
+CBUFFER_START(UnityDeferredCompute)
+    uint g_TileListOffset;
+CBUFFER_END
+
+#ifdef DEBUG_DISPLAY
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Debug/DebugDisplay.hlsl"
+#endif
+
+// The light loop (or lighting architecture) is in charge to:
+// - Define light list
+// - Define the light loop
+// - Setup the constant/data
+// - Do the reflection hierarchy
+// - Provide sampling function for shadowmap, ies, cookie and reflection (depends on the specific use with the light loops like index array or atlas or single and texture format (cubemap/latlong))
+
+#define HAS_LIGHTLOOP
+
+// Note: We have fix as guidelines that we have only one deferred material (with control of GBuffer enabled). Mean a users that add a new
+// deferred material must replace the old one here. If in the future we want to support multiple layout (cause a lot of consistency problem),
+// the deferred shader will require to use multicompile.
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/LightLoop/LightLoopDef.hlsl"
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Material/Lit/Lit.hlsl"
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/LightLoop/LightLoop.hlsl"
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/RenderPipeline/HDStencilUsage.cs.hlsl"
+
+// New: for the medium&camera spectral data:
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/UWOcean/Lighting/shaders/UWSpectralDataDef.cs.hlsl"
+
+
+
+#pragma only_renderers d3d11 playstation xboxone xboxseries vulkan metal switch
+
+//-------------------------------------------------------------------------------------
+// variable declaration
+//-------------------------------------------------------------------------------------
+
+TEXTURE2D_X_UINT2(_StencilTexture);
+RW_TEXTURE2D_X(float3, diffuseLightingUAV);
+RW_TEXTURE2D_X(float4, specularLightingUAV);
+
+#define GROUP_SIZE (TILE_SIZE_FPTL / 2) // 4x 8x8 groups per a 16x16 tile
+
+
+
+//-------------------------------------------------------------------------------------
+// UW shading
+//-------------------------------------------------------------------------------------
+#define UW_DO_SINGLE_SCATTERING
+
+// #define UW_OLD_L_SURFACE_RGB
+
+#define UW_USE_AMBIENT_OCCLUSION
+
+
+#define UW_ENABLE_L_SURFACE_COSINE
+// #define USE_D65_SUNLIGHT
+
+// #define DO_XYZ_TO_RGB
+
+// #define DO_MY_TONEMAPPING
+
+#if defined(USE_D65_SUNLIGHT)
+static float _SunSpectrumD65[12] = {
+    82.7549, 88.52304545454547, 11.373454545454546, 11.720818181818183, 10.761272727272729, 10.144636363636364, 
+    74.12152727272709, 88.80565454545453, 88.04422727272726, 81.6960727272727, 81.18863636363636, 71.6091
+};
+#endif
+
+// --------------- Color conversions
+
+#if defined(DO_XYZ_TO_RGB)
+// Conversion functions from https://gist.github.com/mattatz/44f081cac87e2f7c8980
+float3 rgb2xyz( float3 c ) {
+    float3 tmp;
+    tmp.x = ( c.r > 0.04045 ) ? pow( ( c.r + 0.055 ) / 1.055, 2.4 ) : c.r / 12.92;
+    tmp.y = ( c.g > 0.04045 ) ? pow( ( c.g + 0.055 ) / 1.055, 2.4 ) : c.g / 12.92,
+    tmp.z = ( c.b > 0.04045 ) ? pow( ( c.b + 0.055 ) / 1.055, 2.4 ) : c.b / 12.92;
+    const float3x3 mat = float3x3(
+        0.4124, 0.3576, 0.1805,
+        0.2126, 0.7152, 0.0722,
+        0.0193, 0.1192, 0.9505 
+    );
+    return 100.0 * mul(tmp, mat);
+}
+
+float3 xyz2lab( float3 c ) {
+    float3 n = c / float3(95.047, 100, 108.883);
+    float3 v;
+    v.x = ( n.x > 0.008856 ) ? pow( n.x, 1.0 / 3.0 ) : ( 7.787 * n.x ) + ( 16.0 / 116.0 );
+    v.y = ( n.y > 0.008856 ) ? pow( n.y, 1.0 / 3.0 ) : ( 7.787 * n.y ) + ( 16.0 / 116.0 );
+    v.z = ( n.z > 0.008856 ) ? pow( n.z, 1.0 / 3.0 ) : ( 7.787 * n.z ) + ( 16.0 / 116.0 );
+    return float3(( 116.0 * v.y ) - 16.0, 500.0 * ( v.x - v.y ), 200.0 * ( v.y - v.z ));
+}
+
+float3 rgb2lab( float3 c ) {
+    float3 lab = xyz2lab( rgb2xyz( c ) );
+    return float3( lab.x / 100.0, 0.5 + 0.5 * ( lab.y / 127.0 ), 0.5 + 0.5 * ( lab.z / 127.0 ));
+}
+
+float3 lab2xyz( float3 c ) {
+    float fy = ( c.x + 16.0 ) / 116.0;
+    float fx = c.y / 500.0 + fy;
+    float fz = fy - c.z / 200.0;
+    return float3(
+         95.047 * (( fx > 0.206897 ) ? fx * fx * fx : ( fx - 16.0 / 116.0 ) / 7.787),
+        100.000 * (( fy > 0.206897 ) ? fy * fy * fy : ( fy - 16.0 / 116.0 ) / 7.787),
+        108.883 * (( fz > 0.206897 ) ? fz * fz * fz : ( fz - 16.0 / 116.0 ) / 7.787)
+    );
+}
+
+float3 xyz2rgb_gamma( float3 c ) {
+    const float3x3 mat = float3x3(
+        3.2406, -1.5372, -0.4986,
+        -0.9689, 1.8758, 0.0415,
+        0.0557, -0.2040, 1.0570
+    );
+    float3 v = mul(c / 100.0, mat);
+    float3 r;
+    r.x = ( v.r > 0.0031308 ) ? (( 1.055 * pow( v.r, ( 1.0 / 2.4 ))) - 0.055 ) : 12.92 * v.r;
+    r.y = ( v.g > 0.0031308 ) ? (( 1.055 * pow( v.g, ( 1.0 / 2.4 ))) - 0.055 ) : 12.92 * v.g;
+    r.z = ( v.b > 0.0031308 ) ? (( 1.055 * pow( v.b, ( 1.0 / 2.4 ))) - 0.055 ) : 12.92 * v.b;
+    return r;
+}
+float3 xyz2rgb( float3 c ) {
+    const float3x3 mat = float3x3(
+        3.2406, -1.5372, -0.4986,
+        -0.9689, 1.8758, 0.0415,
+        0.0557, -0.2040, 1.0570
+    );
+    float3 v = mul(c / 100.0, mat);
+    // float3 r;
+    // r.x = ( v.r > 0.0031308 ) ? (( 1.055 * pow( v.r, ( 1.0 / 2.4 ))) - 0.055 ) : 12.92 * v.r;
+    // r.y = ( v.g > 0.0031308 ) ? (( 1.055 * pow( v.g, ( 1.0 / 2.4 ))) - 0.055 ) : 12.92 * v.g;
+    // r.z = ( v.b > 0.0031308 ) ? (( 1.055 * pow( v.b, ( 1.0 / 2.4 ))) - 0.055 ) : 12.92 * v.b;
+    return v;
+}
+
+float3 lab2rgb( float3 c ) {
+    return xyz2rgb( lab2xyz( float3(100.0 * c.x, 2.0 * 127.0 * (c.y - 0.5), 2.0 * 127.0 * (c.z - 0.5)) ) );
+}
+#endif
+// end color conversions ----------
+
+#if defined(DO_MY_TONEMAPPING)
+float3 gamma_tonemap(float3 v) {
+    float3 r;
+    r.x = ( v.r > 0.0031308 ) ? (( 1.055 * pow( v.r, ( 1.0 / 2.2 ))) - 0.055 ) : 12.92 * v.r;
+    r.y = ( v.g > 0.0031308 ) ? (( 1.055 * pow( v.g, ( 1.0 / 2.2 ))) - 0.055 ) : 12.92 * v.g;
+    r.z = ( v.b > 0.0031308 ) ? (( 1.055 * pow( v.b, ( 1.0 / 2.2 ))) - 0.055 ) : 12.92 * v.b;
+    return r;
+}
+#endif
+
+
+float GetSSExt(uint nWls, float3 w, float camToSurface, float pointToSurface) {
+    float ext = 0.0f;
+    for (uint i = 0; i < nWls; i++) { // For each wavelength
+        ext += _WaterScatExtDw[i].y;
+    }
+    // float y = (camToSurface+pointToSurface)/2.0f;
+    float y = camToSurface-w.y;
+    return exp(-ext/(float)nWls * y);
+}
+
+
+
+float L_medium(float3 w, float T, float distanceToSurface, float scat, float ext, float dw) {
+  // w.y = abs(w.y); // preguntar, probar -abs
+  // distanceToSurface = 0.0;
+  return -(scat * exp(-dw * distanceToSurface)) / (4.0*PI * (ext + dw*w.y))
+         * (exp(-(ext + dw*w.y) * T) - 1.0);
+}
+
+
+#if defined(UW_OLD_L_SURFACE_RGB)
+float3 L_surface(float3 kd, float T, float pointToSurface, float ext, float dw) {
+    // return float3(0.0,0.0,0.0);
+    // return kd;
+    // if (w.y>0) return kd;
+
+    return kd * exp(-dw * pointToSurface) / PI * exp(-ext*T);
+}
+#else
+
+// FIXED VERSION of the texture colors, doing RGB->spectrum first
+float L_surface(float kd, float T, float pointToSurface, float ext, float dw) {
+    // return float3(0.0,0.0,0.0);
+    // return kd;
+    // if (w.y>0) return kd;
+
+    return kd * exp(-dw * pointToSurface) / PI * exp(-ext*T);
+}
+
+float rgb2intensity(float3 rgb, uint wl, uint maxWlB, uint maxWlG) {
+    if      (wl < maxWlB) return rgb.b; // TODO: AÑADIR ESTAS VARIABLES DESDE UWLighting.cs o como se llame
+    else if (wl < maxWlG) return rgb.g;
+    else                  return rgb.r;
+}
+#endif
+
+
+// kd already has the emission of the water surface, just attenuate it
+float3 L_waterSurface(float3 kd, float T, float ext) {
+    return kd * exp(-ext*T);
+}
+
+
+
+float3 ShadeUnderwaterSingleWl(uint nWls, float3 w, float depth, PositionInputs posInput, float3 kd, float camToSurface, float pointToSurface, bool isBackground, float3 diffuseLightingSurface) 
+{
+    float3 underWaterColor = float3(0.0,0.0,0.0);
+    #if defined(UW_OLD_L_SURFACE_RGB)
+    #else
+    uint maxWlB = _WaterScatExtDw[2].w;
+    uint maxWlG = _WaterScatExtDw[3].w;
+    #endif
+
+
+    for (uint i = 0; i < nWls; i++) { // For each wavelength
+      // Input vectors are float4, last one empty:
+      float scat = _WaterScatExtDw[i].x,
+            ext = _WaterScatExtDw[i].y,
+            dw = _WaterScatExtDw[i].z;
+      float3 responseCurve = float3(1.0f,1.0f,1.0f);
+
+
+      underWaterColor += responseCurve * L_medium(w, depth, camToSurface, scat, ext, dw);
+
+      if (!isBackground) { // Add surface
+        // if (!isWaterSurface) diffuseLightingSurface *= exp(-ext*pointToSurface); // Attenuate lighting based on dist to water surface
+        // underWaterColor += responseCurve * L_waterSurface(kd, depth, ext));
+        #if defined(UW_OLD_L_SURFACE_RGB)
+        float3 l_surface = L_surface((1.0f+diffuseLightingSurface*exp(-ext*pointToSurface/2.0f))*kd, depth, pointToSurface, ext, dw);
+        #else
+        float3 l_surface = (1.0f+diffuseLightingSurface*exp(-ext*pointToSurface/2.0f))*L_surface(rgb2intensity(kd, i, maxWlB, maxWlG), depth, pointToSurface, ext, dw);
+        #endif
+        underWaterColor += responseCurve * l_surface;
+        // underWaterColor += responseCurve * L_surface((1.0f+20.0f*diffuseLightingSurface*exp(-ext*pointToSurface/2.0f))*kd, depth, pointToSurface, ext, dw);
+
+      }
+      return 2.0f * underWaterColor;
+    }
+    return 2.0f * underWaterColor / (float)nWls;
+    // return float3(1.0,0.7,0.5);
+}
+
+
+float3 ShadeUnderwater(uint nWls, float3 w, float depth, PositionInputs posInput, float3 kd, float camToSurface, float pointToSurface, bool isBackground, float3 diffuseLightingSurface) 
+{
+    float3 underWaterColor = float3(0.0,0.0,0.0);
+    #if defined(UW_OLD_L_SURFACE_RGB)
+    #else
+    uint maxWlB = _WaterScatExtDw[2].w;
+    uint maxWlG = _WaterScatExtDw[3].w;
+    #endif
+
+
+    for (uint i = 0; i < nWls; i++) { // For each wavelength
+      // Input vectors are float4, last one empty:
+      float scat = _WaterScatExtDw[i].x,
+            ext = _WaterScatExtDw[i].y,
+            dw = _WaterScatExtDw[i].z;
+      float3 responseCurve = _ResponseCurve[i].xyz;
+
+      float L_m = L_medium(w, depth, camToSurface, scat, ext, dw);
+#if defined(USE_D65_SUNLIGHT)
+      L_m *= _SunSpectrumD65[i];
+#endif
+
+      underWaterColor += responseCurve * L_m;
+
+      if (!isBackground) { // Add surface
+        // if (!isWaterSurface) diffuseLightingSurface *= exp(-ext*pointToSurface); // Attenuate lighting based on dist to water surface
+        // underWaterColor += responseCurve * L_waterSurface(kd, depth, ext));
+        #if defined(UW_OLD_L_SURFACE_RGB)
+        float3 l_surface = L_surface((1.0f+diffuseLightingSurface*exp(-ext*pointToSurface/2.0f))*kd, depth, pointToSurface, ext, dw);
+        #else
+        float3 l_surface = (1.0f+diffuseLightingSurface*exp(-ext*pointToSurface/2.0f))*L_surface(rgb2intensity(kd, i, maxWlB, maxWlG), depth, pointToSurface, ext, dw);
+        #endif
+
+        #if defined(USE_D65_SUNLIGHT)
+        l_surface *= _SunSpectrumD65[i];
+        #endif
+
+        underWaterColor += responseCurve * l_surface;
+        // underWaterColor += responseCurve * L_surface((1.0f+20.0f*diffuseLightingSurface*exp(-ext*pointToSurface/2.0f))*kd, depth, pointToSurface, ext, dw);
+
+      }
+    }
+    return 2.0f * underWaterColor / (float)nWls;
+    // return float3(1.0,0.7,0.5);
+}
+
+// float GetSingleScatteringExtinction(float3 w, float T, float camToSurface, float pointToSurface, bool isBackground) {
+
+//     // return 0.0f;
+//     float ext = 0.0f;
+//     for (uint i = 0; i < 8; i++) { // For each wavelength
+//         ext += _WaterScatExtDw[i].y,
+//     }
+//     ext /= 8.0f;
+//     // float y = 0;
+//     float y = (camToSurface + pointToSurface) / 2.0f;
+
+//     if (isBackground) {
+//         y = (camToSurface + w.y/ext) / 2.0f;
+//     }
+
+//     // if (isBackground) {
+//     //     float meanFree = 1.0f / ext;
+//     //     y = (camToSurface + w.y*meanFree) / 2.0f;
+//     // }
+
+//     return exp(-ext*y);
+// }
+
+void UWEvaluateSingleScattering(PositionInputs posInput, float3 V, out float3 color, out float3 opacity)
+{
+    color = opacity = 0;
+
+#ifdef DEBUG_DISPLAY
+    // Don't sample atmospheric scattering when lighting debug more are enabled so fog is not visible
+    if (_DebugLightingMode == DEBUGLIGHTINGMODE_MATCAP_VIEW || (_DebugLightingMode >= DEBUGLIGHTINGMODE_DIFFUSE_LIGHTING && _DebugLightingMode <= DEBUGLIGHTINGMODE_EMISSIVE_LIGHTING))
+        return;
+
+    if (_DebugShadowMapMode == SHADOWMAPDEBUGMODE_SINGLE_SHADOW || _DebugLightingMode == DEBUGLIGHTINGMODE_LUX_METER || _DebugLightingMode == DEBUGLIGHTINGMODE_LUMINANCE_METER)
+        return;
+#endif
+
+    // TODO: do not recompute this, but rather pass it directly.
+    // Note1: remember the hacked value of 'posInput.positionWS'.
+    // Note2: we do not adjust it anymore to account for the distance to the planet. This can lead to wrong results (since the planet does not write depth).
+    float fogFragDist = distance(posInput.positionWS, GetCurrentViewPosition());
+
+    if (_FogEnabled)
+    {
+        float4 volFog = float4(0.0, 0.0, 0.0, 0.0);
+
+        float expFogStart = 0.0f;
+
+        if (_EnableVolumetricFog != 0)
+        {
+            bool doBiquadraticReconstruction = _VolumetricFilteringEnabled == 0; // Only if filtering is disabled.
+            float4 value = SampleVBuffer(TEXTURE3D_ARGS(_VBufferLighting, s_linear_clamp_sampler),
+                                         posInput.positionNDC,
+                                         fogFragDist,
+                                         _VBufferViewportSize,
+                                         _VBufferLightingViewportScale.xyz,
+                                         _VBufferLightingViewportLimit.xyz,
+                                         _VBufferDistanceEncodingParams,
+                                         _VBufferDistanceDecodingParams,
+                                         true, doBiquadraticReconstruction, false);
+
+            // TODO: add some slowly animated noise (dither?) to the reconstructed value.
+            // TODO: re-enable tone mapping after implementing pre-exposure.
+            volFog = DelinearizeRGBA(float4(/*FastTonemapInvert*/(value.rgb), value.a));
+            expFogStart = _VBufferLastSliceDist;
+        }
+
+        // float distDelta = fogFragDist - expFogStart; // esto no lo uso
+
+        // ---------------------------------------------------------------------------------------
+        float distDelta = fogFragDist - expFogStart;
+
+        if ((distDelta > 0))
+        {
+            // Apply the distant (fallback) fog.
+            float3 positionWS = GetCurrentViewPosition() - V * expFogStart;
+            float  startHeight = positionWS.y;
+            float  cosZenith = -V.y;
+
+            // For both homogeneous and exponential media,
+            // Integrate[Transmittance[x] * Scattering[x], {x, 0, t}] = Albedo * Opacity[t].
+            // Note that pulling the incoming radiance (which is affected by the fog) out of the
+            // integral is wrong, as it means that shadow rays are not volumetrically shadowed.
+            // This will result in fog looking overly bright.
+
+            float3 volAlbedo = _HeightFogBaseScattering.xyz / _HeightFogBaseExtinction;
+            float  odFallback = OpticalDepthHeightFog(_HeightFogBaseExtinction, _HeightFogBaseHeight,
+                _HeightFogExponents, cosZenith, startHeight, distDelta);
+            float  trFallback = TransmittanceFromOpticalDepth(odFallback);
+            float  trCamera = 1 - volFog.a;
+
+            volFog.rgb += trCamera * GetFogColor(V, fogFragDist) * GetCurrentExposureMultiplier() * volAlbedo * (1 - trFallback);
+            volFog.a = 1 - (trCamera * trFallback);
+        }
+
+        // ---------------------------------------------------------------------------------------
+
+
+
+        // volFog *= 1.0f; // TODO: valor
+                                  // como combinar esto con MS
+                                  // Esta funcion parece que solo se evalua en superficies :/
+                                  // Quitar el codigo de justo encima? (exponential fog)??
+
+        // volFog *= 0.0f;
+
+        // color = 1.0f;
+        color = volFog.rgb; // Already pre-exposed
+        opacity = volFog.a;
+        // opacity = 0.00002f;
+    
+    }
+}
+
+
+#ifdef USE_INDIRECT
+
+StructuredBuffer<uint> g_TileList;
+// Indirect
+[numthreads(GROUP_SIZE, GROUP_SIZE, 1)]
+void SHADE_OPAQUE_ENTRY(uint2 groupThreadId : SV_GroupThreadID, uint groupId : SV_GroupID)
+{
+    uint  tileIndex   = g_TileList[g_TileListOffset + (groupId / 4)];
+    uint2 tileCoord   = uint2((tileIndex >> TILE_INDEX_SHIFT_X) & TILE_INDEX_MASK, (tileIndex >> TILE_INDEX_SHIFT_Y) & TILE_INDEX_MASK); // see builddispatchindirect.compute
+    uint2 pixelCoord  = tileCoord * GetTileSize()
+                      + uint2(groupId & 1, (groupId >> 1) & 1) * GROUP_SIZE
+                      + groupThreadId;
+
+    UNITY_XR_ASSIGN_VIEW_INDEX(tileIndex >> TILE_INDEX_SHIFT_EYE);
+
+    uint screenWidth  = (uint)_ScreenSize.x;
+    uint numTilesX    = (screenWidth + (TILE_SIZE_FPTL) - 1) / TILE_SIZE_FPTL;
+    uint tileVariantIndex = tileCoord.x + tileCoord.y * numTilesX;
+
+#if defined(UNITY_STEREO_INSTANCING_ENABLED)
+    uint screenHeight = (uint)_ScreenSize.y;
+    uint numTilesY = (screenHeight + (TILE_SIZE_FPTL) - 1) / TILE_SIZE_FPTL;
+    tileVariantIndex += unity_StereoEyeIndex * numTilesX * numTilesY;
+#endif
+
+    uint featureFlags = TileVariantToFeatureFlags(VARIANT, tileVariantIndex);
+#else
+
+// Direct
+[numthreads(GROUP_SIZE, GROUP_SIZE, 1)]
+void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 groupId : SV_GroupID)
+{
+    UNITY_XR_ASSIGN_VIEW_INDEX(dispatchThreadId.z);
+
+    uint2 tileCoord    = (GROUP_SIZE * groupId) / GetTileSize();
+    uint2 pixelCoord   = dispatchThreadId.xy;
+    uint  featureFlags = UINT_MAX;
+
+#endif
+
+    // This need to stay in sync with deferred.shader
+
+    float depth = LoadCameraDepth(pixelCoord.xy);
+    PositionInputs posInput = GetPositionInput(pixelCoord.xy, _ScreenSize.zw, depth, UNITY_MATRIX_I_VP, UNITY_MATRIX_V, tileCoord);
+
+
+    bool isBackground = false;
+    // For indirect case: we can still overlap inside a tile with the sky/background, reject it
+    // Can't rely on stencil as we are in compute shader
+    if (depth == UNITY_RAW_FAR_CLIP_VALUE)
+    {
+        // return;
+        isBackground=true;
+    }
+
+    // This is required for camera stacking and other cases where we might have a valid depth value in the depth buffer, but the pixel was not covered by this camera
+    uint stencilVal = GetStencilValue(LOAD_TEXTURE2D_X(_StencilTexture, pixelCoord.xy));
+    if ((stencilVal & STENCILUSAGE_REQUIRES_DEFERRED_LIGHTING) == 0)
+    {
+        // return;
+        isBackground=true;
+    }
+
+    float3 V = GetWorldSpaceNormalizeViewDir(posInput.positionWS);
+
+    BSDFData bsdfData;
+    BuiltinData builtinData;
+    DECODE_FROM_GBUFFER(posInput.positionSS, featureFlags, bsdfData, builtinData);
+    float3 kd = LOAD_TEXTURE2D_X(_GBufferTexture0, posInput.positionSS).rgb;
+
+
+#if defined(UW_USE_AMBIENT_OCCLUSION)
+    // float aoFactor = GetAmbientOcclusionForMicroShadowing(bsdfData);
+    const float aoIntensity = 0.5f; // Remap, it was too strong. TODO: parameter?
+
+    float aoFactor = GetScreenSpaceDiffuseOcclusion(posInput.positionSS)*aoIntensity+aoIntensity;
+    kd *= aoFactor;
+#endif
+
+
+#if defined(UW_ENABLE_L_SURFACE_COSINE)
+    // Cosine attenuation for surfaces
+    float3 normal = bsdfData.normalWS;
+    // float cosine = max(dot(normal,float3(0.0f,1.0f,0.0f)),0.0f);
+    // kd *= ((cosine*2.0f/3.0f)+(1.0f/3.0f));
+
+    float cosine = max(dot(normal,float3(0.0f,1.0f,0.0f)),0.6f);
+    kd *= cosine;
+#endif 
+
+    // if (length(builtinData.emissiveColor) > 0.1) diffuseLightingSurface = float3(1000.0,0.0,0.0); 
+
+
+    PreLightData preLightData = GetPreLightData(V, posInput, bsdfData);
+
+    LightLoopOutput lightLoopOutput;
+    LightLoop(V, posInput, preLightData, bsdfData, builtinData, featureFlags, lightLoopOutput);
+
+    float3 diffuseLightingSurface = lightLoopOutput.diffuseLighting;
+
+    bool isWaterSurface = false;
+    if (length(builtinData.bakeDiffuseLighting) > 0.01) {
+        diffuseLightingSurface = builtinData.bakeDiffuseLighting;//float3(1000.0,0.0,0.0);
+        isWaterSurface = true; // TODO: añadir a ShadeUnderwater!!!
+    }
+
+    // Alias
+    // float3 diffuseLighting = lightLoopOutput.diffuseLighting;
+    // float3 specularLighting = lightLoopOutput.specularLighting;
+
+    float T = length(posInput.positionWS); // WS here is actually camera relative
+
+    // float camToSurface = abs(_CamToSurface);
+    // camToSurface = 1.0;
+
+    float camToSurface = _WaterScatExtDw[0].w; // Hack to fix the variable
+    float pointToSurface = -posInput.positionWS.y+camToSurface;
+
+
+    uint nWls = (int)_WaterScatExtDw[1].w; // Number of wavelengths
+    float3 diffuseLighting = ShadeUnderwater(nWls, V, T, posInput, kd, camToSurface, pointToSurface, isBackground, diffuseLightingSurface);
+
+    // For figures ----------------------
+    // Only one wl: 
+    // float3 diffuseLighting = ShadeUnderwaterSingleWl(nWls, V, T, posInput, kd, camToSurface, pointToSurface, isBackground, diffuseLightingSurface);
+    // texture RGB:
+    // if (!isBackground) diffuseLighting = kd;
+    // else diffuseLighting = float3(1.0,1.0,1.0);
+    // Depth:
+    // diffuseLighting = length(posInput.positionWS)*0.05 * float3(1.0,1.0,1.0);
+    // -----------------------------------------------
+
+
+    // TODO: mezclar bien la iluminacion especular, ahora mismo la superficie del agua queda muy rara con estas dos lineas:
+    // float3 specularLighting = lightLoopOutput.specularLighting * 3e-2; // float3(0.0,0.0,0.0);
+    // if (isBackground||isWaterSurface) specularLighting = float3(0.0,0.0,0.0);
+    
+    float3 specularLighting = float3(0.0,0.0,0.0);
+
+
+#if defined(DO_XYZ_TO_RGB)
+    diffuseLighting = xyz2rgb(diffuseLighting);
+#endif    
+
+    diffuseLighting *= GetCurrentExposureMultiplier();
+    specularLighting *= GetCurrentExposureMultiplier();
+
+#if defined(UW_DO_SINGLE_SCATTERING)
+    // Adapted from Water/WaterLighting.compute: WaterSurface, but it looks strange here :(
+    // Evaluate the fog and combine
+    float3 volColor, volOpacity;
+    UWEvaluateSingleScattering(posInput, V, volColor, volOpacity);
+    // 1
+    // diffuseLighting = diffuseLighting * (1 - volOpacity) + volOpacity*volColor;
+
+    
+    // 2
+    // volColor /= volOpacity;
+    // diffuseLighting = max(diffuseLighting,volColor);
+
+    // 3
+    //if (min(volColor.r, min(volColor.g, volColor.b)) < 0.1) volOpacity = 0.0;
+    // volOpacity *= 0.05f;
+    // volOpacity = 1.0-volOpacity;
+    // diffuseLighting = diffuseLighting * (1 - volOpacity) + volOpacity*volColor;
+    // diffuseLighting = volColor;
+
+
+    // Attenuate the single scat, bc Unity doesnt actually extinguish the incident light
+    // volOpacity *= GetSingleScatteringExtinction(V,T,camToSurface,pointToSurface,isBackground);
+    volOpacity *= GetSSExt(nWls, V, camToSurface, pointToSurface);
+
+    // 4
+    diffuseLighting += volOpacity*volColor;
+
+
+#endif
+
+#if defined(DO_MY_TONEMAPPING)
+    // Tonemapping:
+    diffuseLighting = gamma_tonemap(diffuseLighting);
+#endif
+    // diffuseLighting.rgb = bsdfData.ambientOcclusion;//GetAmbientOcclusionForMicroShadowing(bsdfData);
+
+    if (_EnableSubsurfaceScattering != 0 && ShouldOutputSplitLighting(bsdfData))
+    {
+        specularLightingUAV[COORD_TEXTURE2D_X(pixelCoord)] = float4(specularLighting, 1.0);
+        diffuseLightingUAV[COORD_TEXTURE2D_X(pixelCoord)]  = TagLightingForSSS(diffuseLighting);
+    }
+    else
+    {
+        specularLightingUAV[COORD_TEXTURE2D_X(pixelCoord)] = float4(diffuseLighting + specularLighting, 1.0);
+    }
+}
+

@@ -112,8 +112,9 @@ CBUFFER_END
 // Generated from UnityEngine.Rendering.HighDefinition.ShaderVariablesUnderWaterSpectral
 // PackingRules = Exact
 CBUFFER_START(ShaderVariablesUnderWaterSpectral)
-    float4 _WaterScatExtDw[4];
-    float4 _ResponseCurve[4];
+    float4 _WaterScatExtDw[64];
+    float4 _ResponseCurve[64];
+    uint _NWavelengths;
 CBUFFER_END
 
 

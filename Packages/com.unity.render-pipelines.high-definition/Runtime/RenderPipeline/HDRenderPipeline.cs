@@ -29,6 +29,9 @@ namespace UnityEngine.Rendering.HighDefinition
     /// </summary>
     public partial class HDRenderPipeline : RenderPipeline
     {
+
+        public bool doSpectralUnderwaterPass = false; // For my underwater pipeline
+
         #region Global Settings
         private HDRenderPipelineGlobalSettings m_GlobalSettings;
         /// <summary>
@@ -2170,8 +2173,17 @@ namespace UnityEngine.Rendering.HighDefinition
                 foreach (var material in m_MaterialList)
                     material.Bind(cmd);
 
+                // New UW: 
+                if (doSpectralUnderwaterPass) {
+                    UWSetOceanFog();
+                }
+                else {
+                    UWSetUserFogs();
+                }
+
                 // Frustum cull Local Volumetric Fog on the CPU. Can be performed as soon as the camera is set up.
                 LocalVolumetricFogList localVolumetricFog = PrepareVisibleLocalVolumetricFogList(hdCamera, cmd);
+                
 
                 // do AdaptiveProbeVolume stuff
                 BindAPVRuntimeResources(cmd, hdCamera);
