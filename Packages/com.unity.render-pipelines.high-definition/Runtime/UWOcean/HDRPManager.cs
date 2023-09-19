@@ -115,7 +115,8 @@ public class HDRPManager : MonoBehaviour
 
     void OnValidate()
     {
-        if (waterSurface != null) waterSurface.transform.position = new Vector3(waterSurface.transform.position.x, waterSurfaceHeight, waterSurface.transform.position.z);
+        if (waterSurface != null) 
+            waterSurface.transform.position = new Vector3(waterSurface.transform.position.x, waterSurfaceHeight, waterSurface.transform.position.z);
         if (ocean != null) {
             ocean.waterSurfaceHeight = waterSurfaceHeight;
             ocean.SendDataToGPU();
@@ -134,7 +135,7 @@ public class HDRPManager : MonoBehaviour
     private void UpdateFogPosition()
     {
         float size = 200.0f;
-        fog.transform.position = new Vector3(0.0f, waterSurfaceHeight - size / 2.0f, 0.0f);
+        fog.transform.position = new Vector3(0.0f, 10+waterSurfaceHeight - size / 2.0f, 0.0f);
         fog.parameters.size = new Vector3(size, size, size); // TODO: CHANGE VOL POSITION
 
         //Debug.Log("New fog pos: " + fog.transform.position.y);

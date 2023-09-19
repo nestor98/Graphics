@@ -309,7 +309,7 @@ float3 ShadeUnderwaterSingleWl(uint nWls, float3 w, float depth, PositionInputs 
 }
 
 
-float3 ShadeUnderwater(uint nWls, float3 w, float depth, PositionInputs posInput, float3 kd, float camToSurface, float pointToSurface, bool isBackground, float3 diffuseLightingSurface) 
+float3 ShadeUnderwater(uint nWls, float3 w, float depth, float3 kd, float camToSurface, float pointToSurface, bool isBackground, float3 diffuseLightingSurface) 
 {
     float3 underWaterColor = float3(0.0,0.0,0.0);
     #if defined(UW_OLD_L_SURFACE_RGB)
@@ -355,28 +355,460 @@ float3 ShadeUnderwater(uint nWls, float3 w, float depth, PositionInputs posInput
     // return float3(1.0,0.7,0.5);
 }
 
-// float GetSingleScatteringExtinction(float3 w, float T, float camToSurface, float pointToSurface, bool isBackground) {
+float SkySpectrum(int iWl, uint nWls) {
+    float i = (float)iWl / (float)nWls;
+    return 100.0 * saturate(1.0f - pow(i, 0.5f));
 
-//     // return 0.0f;
-//     float ext = 0.0f;
-//     for (uint i = 0; i < 8; i++) { // For each wavelength
-//         ext += _WaterScatExtDw[i].y,
-//     }
-//     ext /= 8.0f;
-//     // float y = 0;
-//     float y = (camToSurface + pointToSurface) / 2.0f;
+}
 
-//     if (isBackground) {
-//         y = (camToSurface + w.y/ext) / 2.0f;
-//     }
+float ShlickFresnel(float3 w, float3 normal, float n1, float n2) {
+    float R0 = pow((n1-n2)/(n1+n2), 2.0f);
+    float cos = 1.0f - dot(w, normal);
+    return R0 + (1.0f - R0) * pow(cos, 5.0f);
+}
 
-//     // if (isBackground) {
-//     //     float meanFree = 1.0f / ext;
-//     //     y = (camToSurface + w.y*meanFree) / 2.0f;
-//     // }
+/******************************************************/
+// Atmospheric scattering computation copied from AtmosphericScattering.hlsl,
+// Needed to make some minor changes to make it work with the water shader
+/******************************************************/
 
-//     return exp(-ext*y);
-// }
+// All units in meters!
+// Assumes that there is NO sky occlusion along the ray AT ALL.
+// We evaluate atmospheric scattering for the sky and other celestial bodies
+// during the sky pass. The opaque atmospheric scattering pass applies atmospheric
+// scattering to all other opaque geometry.
+void UWEvaluatePbrAtmosphere(float3 worldSpaceCameraPos, float3 V, float distAlongRay, bool renderSunDisk,
+                           out float3 skyColor, out float3 skyOpacity)
+{
+
+    // V.y = -V.y; // Invert Y axis to match Unity's convention.
+
+    skyColor = skyOpacity = 0;
+
+    const float  R = _PlanetaryRadius;
+    const float2 n = float2(_AirDensityFalloff, _AerosolDensityFalloff);
+    const float2 H = float2(_AirScaleHeight,    _AerosolScaleHeight);
+
+
+    const float3 O     = worldSpaceCameraPos - _PlanetCenterPosition.xyz;
+
+    float3 N; float r; // These params correspond to the entry point
+    float  tEntry = IntersectAtmosphere(O, V, N, r).x;
+    float  tExit  = IntersectAtmosphere(O, V, N, r).y;
+
+    // TODO: Not sure it's possible to precompute cam rel pos since variables
+    // in the two constant buffers may be set at a different frequency?
+    const float  tFrag =min(tExit, abs(distAlongRay)); // Clear the "hit ground" flag
+
+
+
+    float NdotV  = dot(N, V);
+    float cosChi = -NdotV;
+    float cosHor = ComputeCosineOfHorizonAngle(r);
+
+    bool rayIntersectsAtmosphere = (tEntry >= 0);
+    bool lookAboveHorizon        = (cosChi >= cosHor);
+
+    // Our precomputed tables only contain information above ground.
+    // Being on or below ground still counts as outside.
+    // If it's outside the atmosphere, we only need one texture look-up.
+    bool hitGround = distAlongRay < 0;
+    bool rayEndsInsideAtmosphere = (tFrag < tExit) && !hitGround;
+
+    if (rayIntersectsAtmosphere)
+    {
+        float2 Z = R * n;
+        float r0 = r, cosChi0 = cosChi;
+
+        float r1 = 0, cosChi1 = 0;
+        float3 N1 = 0;
+
+        if (tFrag < tExit)
+        {
+            float3 P1 = O + tFrag * -V;
+
+            r1      = length(P1);
+            N1      = P1 * rcp(r1);
+            cosChi1 = dot(P1, -V) * rcp(r1);
+
+            // Potential swap.
+            cosChi0 = (cosChi1 >= 0) ? cosChi0 : -cosChi0;
+        }
+
+        float2 ch0, ch1 = 0;
+
+        {
+            float2 z0 = r0 * n;
+
+            ch0.x = RescaledChapmanFunction(z0.x, Z.x, cosChi0);
+            ch0.y = RescaledChapmanFunction(z0.y, Z.y, cosChi0);
+        }
+
+        if (tFrag < tExit)
+        {
+            float2 z1 = r1 * n;
+
+            ch1.x = ChapmanUpperApprox(z1.x, abs(cosChi1)) * exp(Z.x - z1.x);
+            ch1.y = ChapmanUpperApprox(z1.y, abs(cosChi1)) * exp(Z.y - z1.y);
+        }
+
+        // We may have swapped X and Y.
+        float2 ch = abs(ch0 - ch1);
+
+        float3 optDepth = ch.x * H.x * _AirSeaLevelExtinction.xyz
+                        + ch.y * H.y * _AerosolSeaLevelExtinction;
+
+        skyOpacity = 1 - TransmittanceFromOpticalDepth(optDepth); // from 'tEntry' to 'tFrag'
+
+
+        for (uint i = 0; i < _DirectionalLightCount; i++)
+        {
+            DirectionalLightData light = _DirectionalLightDatas[i];
+
+            // Use scalar or integer cores (more efficient).
+            bool interactsWithSky = asint(light.distanceFromCamera) >= 0;
+
+            if (!interactsWithSky) continue;
+
+            float3 L = -light.forward.xyz;
+
+
+
+            float3 radiance = 0; // from 'tEntry' to 'tExit'
+            
+        if (renderSunDisk)
+        {
+            float lightDist = tExit;
+
+                if (asint(light.angularDiameter) != 0)
+                {
+                    
+
+                    float LdotV    = -dot(L, V);
+                    float rad      = acos(LdotV);
+                    float radInner = 0.5 * light.angularDiameter;
+
+                    float solidAngle = TWO_PI * (1 - light.flareCosInner);
+
+                    if (LdotV >= light.flareCosOuter)
+                    {
+                        // Sun flare is visible. Sun disk may or may not be visible.
+                        // Assume uniform emission.
+                        float3 color = light.color.rgb;
+                        float  scale = rcp(solidAngle);
+
+                        if (LdotV >= light.flareCosInner) // Sun disk.
+                        {
+                            // tFrag = lightDist;
+
+
+                            color *= light.surfaceTint / 25500;
+                        }
+                        else // Flare region.
+                        {
+                            float rsun = max(0, rad - radInner);
+                            float wsun = saturate(1 - rsun * rcp(light.flareSize));
+
+                            color *= light.flareTint / 25500;
+                            scale *= SafePositivePow(wsun, light.flareFalloff);
+                        }
+
+                        radiance += color * scale;
+                    }
+                }
+            }
+
+            // TODO: solve in spherical coords?
+            float height = r - R;
+            float  NdotL = dot(N, L);
+            float3 projL = L - N * NdotL;
+            float3 projV = V - N * NdotV;
+            float  phiL  = acos(clamp(dot(projL, projV) * rsqrt(max(dot(projL, projL) * dot(projV, projV), FLT_EPS)), -1, 1));
+
+            TexCoord4D tc = ConvertPositionAndOrientationToTexCoords(height, NdotV, NdotL, phiL);
+
+
+            // Single scattering does not contain the phase function.
+            float LdotV = dot(L, -V);
+
+            // Air.
+            radiance += lerp(SAMPLE_TEXTURE3D_LOD(_AirSingleScatteringTexture,     s_linear_clamp_sampler, float3(tc.u, tc.v, tc.w0), 0).rgb,
+                             SAMPLE_TEXTURE3D_LOD(_AirSingleScatteringTexture,     s_linear_clamp_sampler, float3(tc.u, tc.v, tc.w1), 0).rgb,
+                             tc.a) * AirPhase(LdotV);
+
+            // Aerosols.
+            // TODO: since aerosols are in a separate texture,
+            // they could use a different max height value for improved precision.
+            radiance += lerp(SAMPLE_TEXTURE3D_LOD(_AerosolSingleScatteringTexture, s_linear_clamp_sampler, float3(tc.u, tc.v, tc.w0), 0).rgb,
+                             SAMPLE_TEXTURE3D_LOD(_AerosolSingleScatteringTexture, s_linear_clamp_sampler, float3(tc.u, tc.v, tc.w1), 0).rgb,
+                             tc.a) * AerosolPhase(LdotV);
+
+            // MS.
+            radiance += lerp(SAMPLE_TEXTURE3D_LOD(_MultipleScatteringTexture,      s_linear_clamp_sampler, float3(tc.u, tc.v, tc.w0), 0).rgb,
+                             SAMPLE_TEXTURE3D_LOD(_MultipleScatteringTexture,      s_linear_clamp_sampler, float3(tc.u, tc.v, tc.w1), 0).rgb,
+                             tc.a);
+
+            if (rayEndsInsideAtmosphere && false)
+            {
+                float3 radiance1 = 0; // from 'tFrag' to 'tExit'
+
+                // TODO: solve in spherical coords?
+                float height1 = r1 - R;
+                float  NdotV1 = -cosChi1;
+                float  NdotL1 = dot(N1, L);
+                float3 projL1 = L - N1 * NdotL1;
+                float3 projV1 = V - N1 * NdotV1;
+                float  phiL1  = acos(clamp(dot(projL1, projV1) * rsqrt(max(dot(projL1, projL1) * dot(projV1, projV1), FLT_EPS)), -1, 1));
+
+                tc = ConvertPositionAndOrientationToTexCoords(height1, NdotV1, NdotL1, phiL1);
+
+                // Single scattering does not contain the phase function.
+
+                // Air.
+                radiance1 += lerp(SAMPLE_TEXTURE3D_LOD(_AirSingleScatteringTexture,     s_linear_clamp_sampler, float3(tc.u, tc.v, tc.w0), 0).rgb,
+                                  SAMPLE_TEXTURE3D_LOD(_AirSingleScatteringTexture,     s_linear_clamp_sampler, float3(tc.u, tc.v, tc.w1), 0).rgb,
+                                  tc.a) * AirPhase(LdotV);
+
+                // Aerosols.
+                // TODO: since aerosols are in a separate texture,
+                // they could use a different max height value for improved precision.
+                radiance1 += lerp(SAMPLE_TEXTURE3D_LOD(_AerosolSingleScatteringTexture, s_linear_clamp_sampler, float3(tc.u, tc.v, tc.w0), 0).rgb,
+                                  SAMPLE_TEXTURE3D_LOD(_AerosolSingleScatteringTexture, s_linear_clamp_sampler, float3(tc.u, tc.v, tc.w1), 0).rgb,
+                                  tc.a) * AerosolPhase(LdotV);
+
+                // MS.
+                radiance1 += lerp(SAMPLE_TEXTURE3D_LOD(_MultipleScatteringTexture,      s_linear_clamp_sampler, float3(tc.u, tc.v, tc.w0), 0).rgb,
+                                  SAMPLE_TEXTURE3D_LOD(_MultipleScatteringTexture,      s_linear_clamp_sampler, float3(tc.u, tc.v, tc.w1), 0).rgb,
+                                  tc.a);
+
+                // L(tEntry, tFrag) = L(tEntry, tExit) - T(tEntry, tFrag) * L(tFrag, tExit)
+                radiance = max(0, radiance - (1 - skyOpacity) * radiance1);
+            }
+
+            radiance *= light.color.rgb; // Globally scale the intensity
+
+            skyColor += radiance;
+        }
+
+        skyColor   = Desaturate(skyColor,   _ColorSaturation);
+        skyOpacity = Desaturate(skyOpacity, _AlphaSaturation) * _AlphaMultiplier;
+
+        float horAngle = acos(cosHor);
+        float chiAngle = acos(cosChi);
+
+        // [start, end] -> [0, 1] : (x - start) / (end - start) = x * rcpLength - (start * rcpLength)
+        // TEMPLATE_3_REAL(Remap01, x, rcpLength, startTimesRcpLength, return saturate(x * rcpLength - startTimesRcpLength))
+        float start    = horAngle;
+        float end      = 0;
+        float rcpLen   = rcp(end - start);
+        float nrmAngle = Remap01(chiAngle, rcpLen, start * rcpLen);
+        // float angle = saturate((0.5 * PI) - acos(cosChi) * rcp(0.5 * PI));
+
+        skyColor *= ExpLerp(_HorizonTint.rgb, _ZenithTint.rgb, nrmAngle, _HorizonZenithShiftPower, _HorizonZenithShiftScale);
+    }
+}
+
+
+float3 ShadeWaterSurface(PositionInputs posInput, uint nWls, float3 normal, float3 w, float camToPoint, float camToSurface) 
+{
+    // TODO: arreglar normal, multiplicaciones bestias de L_reflection, L_refraction etc.
+    // if (length(normal)<0.1) normal = float3(0.0,1.0,0.0);
+
+    // normal *= -1.0;
+
+    // normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
+    // normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
+    // normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
+    // normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
+
+    // normal = -normalize(normal);
+    // normal = float3(0,1,0);
+    normal = normalize(normal.xzy);
+    normal.y = -normal.y;
+    // return (0.5 + 0.5 * normal);//* 100.0;
+    
+    // return -normal;
+    // normal = float3(0.0,1.0,0.0);
+    // normal = normal.xzy;
+    // normal.y = -normal.y;
+
+    // return (0.5 + 0.5 * normal);//* 100.0;
+    // normal = float3(0,1,0);
+    float3 camDir = -normalize(w);
+    float3 reflected = reflect(camDir, normalize(normal));
+    float originToSurf = 0.1; // Origin of the reflection slightly below the water surface to avoid weird stuff
+    float3 refracted = refract(camDir, normal, 1.33);//1/1.33);
+
+    float R0 = pow((1.0-1.33)/(1.0+1.33), 2.0f);
+    float cos = 1.0f - dot(camDir, normal);
+    float fresnel = R0 + (1.0f - R0) * pow(cos, 5.0f); // Shlick's approximation
+    // fresnel = 1.0 - fresnel;
+    float reflectedDist = 100000.0;
+
+
+
+    // float3 inputColor = float3(1,1,1);
+    // float3 skyLighting = EvaluateAtmosphericScattering(posInput, refracted, inputColor);
+
+    
+    float3 skyOpacity;
+    float3 skyColor;// = float4(1,1,1,1);
+    // // EvaluateAtmosphericScattering(posInput, refracted, skyColor, volOpacity); // Premultiplied alpha
+    // skyColor = EvaluateAtmosphericScattering(posInput, refracted, skyColor);
+    // *******************************
+
+    UWEvaluatePbrAtmosphere(posInput.positionWS, 
+                            // float3(0,-1,0),
+                            refracted,
+                            // TODO1: check this distance here (atmosphere path length)
+                            10000, true, // rendersundisk
+                           skyColor, skyOpacity);
+
+
+
+    // *******************************
+    skyColor *= 10000 * skyOpacity; // TODO1: fix these scalars!!
+
+    // return skyColor * skyOpacity * 100 * fresnel;
+    // skyColor = skyColor * volOpacity; //result.rgb = result.rgb * (1 - volOpacity) + volColor * result.a;
+
+    
+    uint maxWlB = _WaterScatExtDw[2].w;
+    uint maxWlG = _WaterScatExtDw[3].w;
+        
+        
+    float3 underWaterColor = float3(0.0,0.0,0.0);
+
+    for (uint i = 0; i < nWls; i++) { // For each wavelength
+      // Input vectors are float4, last one empty:
+      float scat = _WaterScatExtDw[i].x,
+            ext = _WaterScatExtDw[i].y,
+            dw = _WaterScatExtDw[i].z;
+      float3 responseCurve = _ResponseCurve[i].xyz;
+
+      
+      float L_camToSurface = L_medium(camDir, camToPoint, camToSurface, scat, ext, dw);
+      float L_reflection = L_medium(reflected, reflectedDist, originToSurf, scat, ext, dw);
+
+    //   float L_refraction = 200.0;//SkySpectrum(i, nWls);
+
+      float L_refraction = rgb2intensity(skyColor.rgb, i, maxWlB, maxWlG);
+
+      float L_surface = exp(-ext * camToPoint) // Extinction up to the water surface
+                        * (fresnel * L_refraction + (1.0-fresnel) * L_reflection);
+
+    //   L_surface = L_reflection;
+
+#if defined(USE_D65_SUNLIGHT)
+      L_m *= _SunSpectrumD65[i];
+#endif
+
+      underWaterColor += responseCurve * (L_camToSurface + L_surface);
+
+    }
+    // return 2.0f * underWaterColor / (float)nWls;
+    return 2.0f * underWaterColor / (float)nWls;
+//     // return float3(1.0,0.7,0.5);
+
+}
+
+float3 ShadeAboveWater(PositionInputs posInput, uint nWls, float3 normal, float3 w, float camToPoint, float camToSurface)
+{
+    
+    
+    if (length(normal)<0.1) normal = float3(0.0,1.0,0.0);
+
+    // normal *= -1.0;
+    // TODO: weird wtuff in THIS function and in water surface distance (camToSurface doesnt seem to match actual surface plane)
+    // Fresnel or some angle is not ok
+
+    normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
+    normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
+    normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
+    normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
+    normal = normalize(normal);
+    // normal = float3(0.0,1.0,0.0);
+    // normal = normal.xzy;
+    // normal.y = -normal.y;
+
+    // return (0.5 + 0.5 * normal);//* 100.0;
+    // normal = float3(0,1,0);
+    float3 camDir = -normalize(w);
+    float3 reflected = reflect(camDir, normalize(normal));
+    float originToSurf = 0.1; // Origin of the reflection slightly below the water surface to avoid weird stuff
+    float3 refracted = refract(camDir, normal, 1/1.33);
+
+    float R0 = pow((1.0-1.33)/(1.0+1.33), 2.0f);
+    float cos = dot(camDir, normal);
+    float fresnel = R0 + (1.0f - R0) * pow(cos, 5.0f); // Shlick's approximation
+    // fresnel = 1.0 - fresnel;
+    float refractedDist = 100000.0;
+
+
+
+    
+    float3 skyOpacity;
+    float3 skyColor;// = float4(1,1,1,1);
+    // // EvaluateAtmosphericScattering(posInput, refracted, skyColor, volOpacity); // Premultiplied alpha
+    // skyColor = EvaluateAtmosphericScattering(posInput, refracted, skyColor);
+    // *******************************
+
+    UWEvaluatePbrAtmosphere(posInput.positionWS, 
+                            // float3(0,-1,0),
+                            reflected,
+                            // refracted, 
+                            10000, true, // rendersundisk
+                           skyColor, skyOpacity);
+
+
+
+    // *******************************
+    skyColor *= 1 * skyOpacity;
+
+    // return skyColor * skyOpacity * 100 * fresnel;
+    // skyColor = skyColor * volOpacity; //result.rgb = result.rgb * (1 - volOpacity) + volColor * result.a;
+
+    
+    uint maxWlB = _WaterScatExtDw[2].w;
+    uint maxWlG = _WaterScatExtDw[3].w;
+        
+        
+    float3 underWaterColor = float3(0.0,0.0,0.0);
+
+    for (uint i = 0; i < nWls; i++) { // For each wavelength
+      // Input vectors are float4, last one empty:
+      float scat = _WaterScatExtDw[i].x,
+            ext = _WaterScatExtDw[i].y,
+            dw = _WaterScatExtDw[i].z;
+      float3 responseCurve = _ResponseCurve[i].xyz;
+
+      
+      
+      float L_refraction = 5* L_medium(refracted, refractedDist, originToSurf, scat, ext, dw);
+      // Extinction ONLY for refraction here (reflection is above water)
+
+    //   float L_refraction = 200.0;//SkySpectrum(i, nWls);
+
+      float L_reflection = rgb2intensity(skyColor.rgb, i, maxWlB, maxWlG);
+
+    //   float L_surface = fresnel * (L_refraction) 
+    //                     + (1.0-fresnel) * L_reflection;
+      float L_surface = fresnel * (L_reflection) 
+                        + (1.0-fresnel) * L_refraction;
+
+    //   L_surface = L_reflection;
+
+#if defined(USE_D65_SUNLIGHT)
+      L_m *= _SunSpectrumD65[i];
+#endif
+
+      underWaterColor += responseCurve * (L_surface);
+
+    }
+    // return 2.0f * underWaterColor / (float)nWls;
+    return 2.0f * underWaterColor / (float)nWls;
+//     // return float3(1.0,0.7,0.5);
+}
 
 void UWEvaluateSingleScattering(PositionInputs posInput, float3 V, out float3 color, out float3 opacity)
 {
@@ -515,6 +947,7 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
     PositionInputs posInput = GetPositionInput(pixelCoord.xy, _ScreenSize.zw, depth, UNITY_MATRIX_I_VP, UNITY_MATRIX_V, tileCoord);
 
 
+
     bool isBackground = false;
     // For indirect case: we can still overlap inside a tile with the sky/background, reject it
     // Can't rely on stencil as we are in compute shader
@@ -538,6 +971,9 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
     BuiltinData builtinData;
     DECODE_FROM_GBUFFER(posInput.positionSS, featureFlags, bsdfData, builtinData);
     float3 kd = LOAD_TEXTURE2D_X(_GBufferTexture0, posInput.positionSS).rgb;
+
+
+    // UpdateSurfaceDataFromNormalData(posInput.positionSS, bsdfData);
 
 
 #if defined(UW_USE_AMBIENT_OCCLUSION)
@@ -585,11 +1021,97 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
     // camToSurface = 1.0;
 
     float camToSurface = _WaterScatExtDw[0].w; // Hack to fix the variable
+
+    bool aboveWater = false;
+    if (camToSurface < -2) {
+        camToSurface = -camToSurface;
+        aboveWater = true;
+
+
+    }
+
+
     float pointToSurface = -posInput.positionWS.y+camToSurface;
+
+    float distThreshold = 0.1f;
+
 
 
     uint nWls = (int)_WaterScatExtDw[1].w; // Number of wavelengths
-    float3 diffuseLighting = ShadeUnderwater(nWls, V, T, posInput, kd, camToSurface, pointToSurface, isBackground, diffuseLightingSurface);
+
+    float3 diffuseLighting = float3(0.0,0.0,0.0);
+
+    if (aboveWater) {
+        float3 camDir = -V;
+
+        
+        // if (pointToSurface > distThreshold || isBackground) {
+        if (isBackground) {
+            
+
+            //    
+            float3 skyOpacity;
+            float3 skyColor;
+            
+
+            UWEvaluatePbrAtmosphere(posInput.positionWS, 
+                                    -camDir,
+                                    10000, true, // rendersundisk
+                                skyColor, skyOpacity);
+            diffuseLighting = skyColor * skyOpacity / 10;
+
+            // diffuseLighting = float3(0,100,0);
+
+            // skyColor = float3(0.1,0.8,0.5);
+            // skyColor /= 100;
+
+            // diffuseLighting = skyColor; 
+            
+
+
+        }
+        // pointToSurface > distThreshold || 
+        else {
+            float3 normal = bsdfData.normalWS;
+            
+            diffuseLighting = ShadeAboveWater(posInput, nWls, normal, camDir, T, camToSurface);
+            // diffuseLighting = float3(10000,0,0);
+        }
+        // diffuseLighting = float3(1,0,0);
+            // diffuseLighting = float3(10,0,0);
+
+    }
+    else if (!isBackground && pointToSurface < distThreshold ) { // pointToSurface < distThreshold
+        // float theta = acos(dot(V,bsdfData.geom));
+        // diffuseLighting = (0.1+pointToSurface) / 0.1;//ShadeWaterSurface(nWls, V, T, posInput, kd, camToSurface, pointToSurface, isBackground, diffuseLightingSurface);
+        // diffuseLighting = 0.5+0.5*bsdfData.normalWS;
+        // diffuseLighting = posInput.positionWS.y/ 100;
+        // diffuseLighting=diffuseLightingSurface*0.0010;
+        // diffuseLighting = 1 +  0.5 * bsdfData.normalWS;
+
+        float3 normal = bsdfData.normalWS;
+        float3 camDir = -V;
+        
+        // float3 refracted = refract(camDir, normal, 1.33);
+
+        // T = 10000.0;
+        isBackground = true;
+        // float pointToSurf2 = 0.1; // Some distance to avoid artifacts
+        // kd = 0.0*float3(1.0,1.0,1.0);
+
+        // diffuseLighting = 1.0 * ShadeUnderwater(nWls, reflected, T, kd, pointToSurf2, pointToSurf2, isBackground, float3(0.0,0.0,0.0));
+
+            
+
+        diffuseLighting = ShadeWaterSurface(posInput, nWls, normal, camDir, T, camToSurface);
+
+        // diffuseLighting = (builtinData.bakeDiffuseLighting.rgb-0.9) * 1;
+        // I want to use the light cookie to generate normals somehow. I was trying the displacement map but it doesnt seem to work :(
+    }
+    else {
+        diffuseLighting = ShadeUnderwater(nWls, V, T, kd, camToSurface, pointToSurface, isBackground, diffuseLightingSurface);
+    }
+    // float3 diffuseLighting = ShadeUnderwater(nWls, V, T, posInput, kd, camToSurface, pointToSurface, isBackground, diffuseLightingSurface);
 
     // For figures ----------------------
     // Only one wl: 
@@ -646,10 +1168,19 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
 
 
 #endif
+    // diffuseLighting = diffuseLightingUAV[COORD_TEXTURE2D_X(pixelCoord)];
+    // diffuseLighting = UNITY_SAMPLE_TEX2D(, pixelCoord);
+
+    // if (V.y<0 && isBackground) {
+    //     diffuseLighting = skyLighting;
+
+    // }
+
 
 #if defined(DO_MY_TONEMAPPING)
     // Tonemapping:
     diffuseLighting = gamma_tonemap(diffuseLighting);
+
 #endif
     // diffuseLighting.rgb = bsdfData.ambientOcclusion;//GetAmbientOcclusionForMicroShadowing(bsdfData);
 

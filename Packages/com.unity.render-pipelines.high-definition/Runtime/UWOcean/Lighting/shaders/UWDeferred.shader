@@ -143,7 +143,8 @@ Shader "Hidden/HDRP/UWDeferred"
                 LightLoop(V, posInput, preLightData, bsdfData, builtinData, LIGHT_FEATURE_MASK_FLAGS_OPAQUE, lightLoopOutput);
 
                 // Alias
-                float3 diffuseLighting = lightLoopOutput.diffuseLighting;
+                // float3 diffuseLighting = lightLoopOutput.diffuseLighting;
+                float3 diffuseLighting = float3(1.0,0.0,0.0);
                 float3 specularLighting = lightLoopOutput.specularLighting;
 
                 diffuseLighting *= GetCurrentExposureMultiplier();

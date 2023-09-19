@@ -85,6 +85,11 @@ namespace UnityEngine.Rendering.HighDefinition
                 TextureHandle currentColorPyramid = m_RenderGraph.ImportTexture(hdCamera.GetCurrentFrameRT((int)HDCameraFrameHistoryType.ColorBufferMipChain));
                 TextureHandle rayCountTexture = RayCountManager.CreateRayCountTexture(m_RenderGraph);
 
+
+
+                // NEw for UW + sky:
+                
+                TextureHandle skyColorBuffer = CreateColorBuffer(m_RenderGraph, hdCamera, msaa);
                 // DrawFullScreen();
                 
 #if ENABLE_VIRTUALTEXTURES
@@ -221,9 +226,13 @@ namespace UnityEngine.Rendering.HighDefinition
                     // TODO: add volumetricLighting here, use inside UWDeferred.compute?
                     // Other option: separate pass: scary
                     // , volumetricLighting
-                    if (!doRGBRendering) 
-                        UWRenderDeferredLighting(m_RenderGraph, hdCamera, colorBuffer, prepassOutput.depthBuffer, prepassOutput.depthPyramidTexture, lightingBuffers, prepassOutput.gbuffer, shadowResult, gpuLightListOutput, volumetricLighting);
-                    
+                    if (!doRGBRendering) {
+
+                        UWRenderSky(m_RenderGraph, hdCamera, skyColorBuffer, volumetricLighting, prepassOutput.depthBuffer, msaa ? prepassOutput.depthAsColor : prepassOutput.depthPyramidTexture);
+
+                        UWRenderDeferredLighting(m_RenderGraph, hdCamera, colorBuffer, skyColorBuffer, prepassOutput.depthBuffer, prepassOutput.depthPyramidTexture, lightingBuffers, prepassOutput.gbuffer, shadowResult, gpuLightListOutput, volumetricLighting);
+                        // colorBuffer = skyColorBuffer;                    
+                    }
                     else {
                         Debug.Log("RGB deferred rendering");
                         UWRGBRenderDeferredLighting(m_RenderGraph, hdCamera, colorBuffer, prepassOutput.depthBuffer, prepassOutput.depthPyramidTexture, lightingBuffers, prepassOutput.gbuffer, shadowResult, gpuLightListOutput, volumetricLighting);
@@ -241,8 +250,8 @@ namespace UnityEngine.Rendering.HighDefinition
                     //MyChanges: no Subsurface Scattering.
                     //RenderSubsurfaceScattering(m_RenderGraph, hdCamera, colorBuffer, historyValidationTexture, ref lightingBuffers, ref prepassOutput);
 
-                    //MyChanges: yes sky, if not it is not redrawn every frame
-                    UWRenderSky(m_RenderGraph, hdCamera, colorBuffer, volumetricLighting, prepassOutput.depthBuffer, msaa ? prepassOutput.depthAsColor : prepassOutput.depthPyramidTexture);
+                    // Nestor (15/09): trying make sky work with UW view: render sky must be before deferred
+                    // UWRenderSky(m_RenderGraph, hdCamera, colorBuffer, volumetricLighting, prepassOutput.depthBuffer, msaa ? prepassOutput.depthAsColor : prepassOutput.depthPyramidTexture);
                     //sunOcclusionTexture = RenderVolumetricClouds(m_RenderGraph, hdCamera, colorBuffer, prepassOutput.depthPyramidTexture, prepassOutput.motionVectorsBuffer, volumetricLighting, maxZMask);
 
                     //TODO: Aqui
@@ -456,7 +465,7 @@ namespace UnityEngine.Rendering.HighDefinition
             // if (m_CurrentDebugDisplaySettings.DebugHideSky(hdCamera))
             //     return;
 
-            // m_SkyManager.RenderSky(renderGraph, hdCamera, colorBuffer, depthStencilBuffer, "Render Sky", ProfilingSampler.Get(HDProfileId.RenderSky));
+            m_SkyManager.RenderSky(renderGraph, hdCamera, colorBuffer, depthStencilBuffer, "Render Sky", ProfilingSampler.Get(HDProfileId.RenderSky));
             // m_SkyManager.RenderOpaqueAtmosphericScattering(renderGraph, hdCamera, colorBuffer, depthTexture, volumetricLighting, depthStencilBuffer);
         }
 

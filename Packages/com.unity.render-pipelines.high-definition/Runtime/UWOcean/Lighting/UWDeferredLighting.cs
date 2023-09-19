@@ -30,6 +30,7 @@ namespace UnityEngine.Rendering.HighDefinition
             public Material regularLightingMat;
 
             public TextureHandle colorBuffer;
+            public TextureHandle skyLighting;
             public TextureHandle sssDiffuseLightingBuffer;
             public TextureHandle depthBuffer;
             public TextureHandle depthTexture;
@@ -61,8 +62,12 @@ namespace UnityEngine.Rendering.HighDefinition
                 return;
             }
 
-
+            float camToSurface = oceanData.GetHeight() - hdCamera.camera.transform.position.y;
             if (!oceanData.MustSendToGPU()) {
+                
+                passData.underWaterSpectralCB._CamToSurface = camToSurface; // TODO: -camera position or smthing
+                passData.underWaterSpectralCB._WaterScatExtDw[3] = camToSurface; // Hack because the cbuffer doesnt seem to like having the _CamToSurface variable
+
                 // Debug.Log("Avoided coming in here twice hehe");
                 return;
             }
@@ -76,7 +81,6 @@ namespace UnityEngine.Rendering.HighDefinition
             var medium = oceanData.spectralData.GetMediumCoefs();
             var responseCurve = oceanData.spectralData.GetResponseCurve();
 
-            float camToSurface = oceanData.GetHeight() - hdCamera.camera.transform.position.y;
 
             passData.underWaterSpectralCB._WaterScatExtDw[3] = camToSurface; // Hack because the cbuffer doesnt seem to like having the _CamToSurface variable
             passData.underWaterSpectralCB._WaterScatExtDw[4*2-1] = (float)oceanData.spectralData.GetNWavelengths()+0.1f;
@@ -93,7 +97,6 @@ namespace UnityEngine.Rendering.HighDefinition
                 passData.underWaterSpectralCB._ResponseCurve[i * 4 + 1] = responseCurve[2][i];
                 passData.underWaterSpectralCB._ResponseCurve[i * 4 + 2] = responseCurve[3][i];
             }
-            passData.underWaterSpectralCB._CamToSurface = camToSurface; // TODO: -camera position or smthing
 
         }   
 
@@ -101,6 +104,7 @@ namespace UnityEngine.Rendering.HighDefinition
             RenderGraph renderGraph,
             HDCamera hdCamera,
             TextureHandle colorBuffer,
+            TextureHandle skyBuffer,
             TextureHandle depthStencilBuffer,
             TextureHandle depthPyramidTexture,
             //TextureHandle volumetricLightingTexture,
@@ -148,7 +152,10 @@ namespace UnityEngine.Rendering.HighDefinition
                 passData.splitLightingMat = GetDeferredLightingMaterial(true /*split lighting*/, passData.enableShadowMasks, debugDisplayOrSceneLightOff);
                 passData.regularLightingMat = GetDeferredLightingMaterial(false /*split lighting*/, passData.enableShadowMasks, debugDisplayOrSceneLightOff);
 
+                passData.skyLighting = builder.ReadTexture(skyBuffer);
+
                 passData.colorBuffer = builder.WriteTexture(colorBuffer);
+                // passData.colorBuffer = builder.WriteTexture(colorBuffer);
 
                 // Warning ------- ugly test here:
                 UWSetOceanData(passData, hdCamera); 
@@ -192,6 +199,7 @@ namespace UnityEngine.Rendering.HighDefinition
                         var colorBuffers = context.renderGraphPool.GetTempArray<RenderTargetIdentifier>(2);
                         colorBuffers[0] = data.colorBuffer;
                         colorBuffers[1] = data.sssDiffuseLightingBuffer;
+                        // colorBuffers[1] = data.skyLighting;
 
                         // TODO RENDERGRAPH: Remove these SetGlobal and properly send these textures to the deferred passes and bind them directly to compute shaders.
                         // This can wait that we remove the old code path.
@@ -211,6 +219,7 @@ namespace UnityEngine.Rendering.HighDefinition
                         BindGlobalLightingBuffers(data.lightingBuffers, context.cmd);
 
                         UWRenderComputeDeferredLighting(data, colorBuffers, context.cmd);
+                        if (!data.enableTile) Debug.Log("Tile is disabled but i still called it!");
 
                         // if (data.enableTile)
                         // {
