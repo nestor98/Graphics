@@ -119,7 +119,7 @@ RW_TEXTURE2D_X(float4, specularLightingUAV);
 #define UW_ENABLE_L_SURFACE_COSINE
 // #define USE_D65_SUNLIGHT
 
-// #define DO_XYZ_TO_RGB
+#define DO_XYZ_TO_RGB
 
 // #define DO_MY_TONEMAPPING
 
@@ -196,7 +196,7 @@ float3 xyz2rgb( float3 c ) {
     // r.x = ( v.r > 0.0031308 ) ? (( 1.055 * pow( v.r, ( 1.0 / 2.4 ))) - 0.055 ) : 12.92 * v.r;
     // r.y = ( v.g > 0.0031308 ) ? (( 1.055 * pow( v.g, ( 1.0 / 2.4 ))) - 0.055 ) : 12.92 * v.g;
     // r.z = ( v.b > 0.0031308 ) ? (( 1.055 * pow( v.b, ( 1.0 / 2.4 ))) - 0.055 ) : 12.92 * v.b;
-    return v;
+    return v = mul(mat, c/100);
 }
 
 float3 lab2rgb( float3 c ) {
@@ -216,13 +216,13 @@ float3 gamma_tonemap(float3 v) {
 #endif
 
 
-float GetSSExt(uint nWls, float3 w, float camToSurface, float pointToSurface) {
+float GetSSExt(uint nWls, float3 w, float T, float camToSurface, float pointToSurface) {
     float ext = 0.0f;
     for (uint i = 0; i < nWls; i++) { // For each wavelength
         ext += _WaterScatExtDw[i].y;
     }
     // float y = (camToSurface+pointToSurface)/2.0f;
-    float y = camToSurface-w.y;
+    float y = camToSurface-w.y*T;
     return exp(-ext/(float)nWls * y);
 }
 
@@ -231,7 +231,8 @@ float GetSSExt(uint nWls, float3 w, float camToSurface, float pointToSurface) {
 float L_medium(float3 w, float T, float distanceToSurface, float scat, float ext, float dw) {
   // w.y = abs(w.y); // preguntar, probar -abs
   // distanceToSurface = 0.0;
-  return -(scat * exp(-dw * distanceToSurface)) / (4.0*PI * (ext + dw*w.y))
+  float MS_MEDIUM_MULT = 100.0;
+  return -MS_MEDIUM_MULT*(scat * exp(-dw * distanceToSurface)) / (4.0*PI * (ext + dw*w.y))
          * (exp(-(ext + dw*w.y) * T) - 1.0);
 }
 
@@ -242,7 +243,8 @@ float3 L_surface(float3 kd, float T, float pointToSurface, float ext, float dw) 
     // return kd;
     // if (w.y>0) return kd;
 
-    return kd * exp(-dw * pointToSurface) / PI * exp(-ext*T);
+    float MS_SURF_MULT = 20.0;
+    return MS_SURF_MULT * kd * exp(-dw * pointToSurface) / PI * exp(-ext*T);
 }
 #else
 
@@ -256,7 +258,7 @@ float L_surface(float kd, float T, float pointToSurface, float ext, float dw) {
 }
 
 float rgb2intensity(float3 rgb, uint wl, uint maxWlB, uint maxWlG) {
-    if      (wl < maxWlB) return rgb.b; // TODO: AÑADIR ESTAS VARIABLES DESDE UWLighting.cs o como se llame
+    if      (wl < maxWlB) return rgb.b; 
     else if (wl < maxWlG) return rgb.g;
     else                  return rgb.r;
 }
@@ -308,7 +310,7 @@ float3 ShadeUnderwaterSingleWl(uint nWls, float3 w, float depth, PositionInputs 
     // return float3(1.0,0.7,0.5);
 }
 
-
+#if defined(OLD_SHADE_UNDERWATER)
 float3 ShadeUnderwater(uint nWls, float3 w, float depth, float3 kd, float camToSurface, float pointToSurface, bool isBackground, float3 diffuseLightingSurface) 
 {
     float3 underWaterColor = float3(0.0,0.0,0.0);
@@ -346,14 +348,159 @@ float3 ShadeUnderwater(uint nWls, float3 w, float depth, float3 kd, float camToS
         l_surface *= _SunSpectrumD65[i];
         #endif
 
+        #if defined(SUPER_SURFACE)
+        l_surface *= 10;
+        #endif
+
         underWaterColor += responseCurve * l_surface;
         // underWaterColor += responseCurve * L_surface((1.0f+20.0f*diffuseLightingSurface*exp(-ext*pointToSurface/2.0f))*kd, depth, pointToSurface, ext, dw);
 
       }
+      #if defined(SUPER_SURFACE)
+      else {
+        underWaterColor = float3(0,0,0);
+      }
+      #endif
     }
-    return 2.0f * underWaterColor / (float)nWls;
+    
+    return underWaterColor / (float)nWls;
     // return float3(1.0,0.7,0.5);
 }
+#else
+float3 ShadeUnderwater(uint nWls, float3 w, float depth, float3 kd, float camToSurface, float pointToSurface, bool isBackground, float3 diffuseLightingSurface) 
+{
+    float3 underWaterColor = float3(0.0,0.0,0.0);
+    #if defined(UW_OLD_L_SURFACE_RGB)
+    #else
+    uint maxWlB = _WaterScatExtDw[2].w;
+    uint maxWlG = _WaterScatExtDw[3].w;
+    #endif
+
+    
+
+
+    for (uint i = 0; i < nWls; i++) { // For each wavelength
+      // Input vectors are float4, last one empty:
+      float scat = _WaterScatExtDw[i].x,
+            ext = _WaterScatExtDw[i].y,
+            dw = _WaterScatExtDw[i].z;
+      float3 responseCurve = _ResponseCurve[i].xyz;
+
+      float L_m = L_medium(w, depth, camToSurface, scat, ext, dw);
+#if defined(USE_D65_SUNLIGHT)
+      L_m *= _SunSpectrumD65[i];
+#endif
+
+      underWaterColor += responseCurve * L_m;
+
+      if (!isBackground) { // Add surface
+        // if (!isWaterSurface) diffuseLightingSurface *= exp(-ext*pointToSurface); // Attenuate lighting based on dist to water surface
+        // underWaterColor += responseCurve * L_waterSurface(kd, depth, ext));
+        // #if defined(UW_OLD_L_SURFACE_RGB)
+        // float3 l_surface = L_surface((1.0f+diffuseLightingSurface*exp(-ext*pointToSurface/2.0f))*kd, depth, pointToSurface, ext, dw);
+        // #else
+        // float3 l_surface = (1.0f+diffuseLightingSurface*exp(-ext*pointToSurface/2.0f))*L_surface(rgb2intensity(kd, i, maxWlB, maxWlG), depth, pointToSurface, ext, dw);
+        // #endif
+        float diffuseLightingIntensity = rgb2intensity(diffuseLightingSurface, i, maxWlB, maxWlG);
+        float l_surface = (1.0f+diffuseLightingIntensity*exp(-ext*pointToSurface/2.0f)) 
+                        * L_surface(rgb2intensity(kd, i, maxWlB, maxWlG), depth, pointToSurface, ext, dw);
+
+        #if defined(USE_D65_SUNLIGHT)
+        l_surface *= _SunSpectrumD65[i];
+        #endif
+
+        #if defined(SUPER_SURFACE)
+        l_surface *= 10;
+        #endif
+
+        underWaterColor += responseCurve * l_surface;
+        // underWaterColor += responseCurve * L_surface((1.0f+20.0f*diffuseLightingSurface*exp(-ext*pointToSurface/2.0f))*kd, depth, pointToSurface, ext, dw);
+
+      }
+      #if defined(SUPER_SURFACE)
+      else {
+        underWaterColor = float3(0,0,0);
+      }
+      #endif
+    }
+    
+    return underWaterColor / (float)nWls;
+    // return float3(1.0,0.7,0.5);
+}
+
+
+#endif  
+
+
+#if defined(NEW_MS_SS_UNDERWATER)
+float3 ShadeUnderwaterMS_SS(uint nWls, float3 L_SS_RGB, float3 w, float depth, float3 kd, float camToSurface, float pointToSurface, bool isBackground, float3 diffuseLightingSurface) 
+{
+    float3 underWaterColor = float3(0.0,0.0,0.0);
+    #if defined(UW_OLD_L_SURFACE_RGB)
+    #else
+    uint maxWlB = _WaterScatExtDw[2].w;
+    uint maxWlG = _WaterScatExtDw[3].w;
+    #endif
+
+    
+
+
+    for (uint i = 0; i < nWls; i++) { // For each wavelength
+      // Input vectors are float4, last one empty:
+      float scat = _WaterScatExtDw[i].x,
+            ext = _WaterScatExtDw[i].y,
+            dw = _WaterScatExtDw[i].z;
+      float3 responseCurve = _ResponseCurve[i].xyz;
+
+      float L_m = L_medium(w, depth, camToSurface, scat, ext, dw);
+#if defined(USE_D65_SUNLIGHT)
+      L_m *= _SunSpectrumD65[i];
+#endif
+      float L_SS = rgb2intensity(L_SS_RGB, i, maxWlB, maxWlG);
+
+      L_SS = L_SS
+
+      L_m += rgb2intensity(L_SS_RGB, i, maxWlB, maxWlG);
+
+      underWaterColor += responseCurve * L_m;
+
+      if (!isBackground) { // Add surface
+        // if (!isWaterSurface) diffuseLightingSurface *= exp(-ext*pointToSurface); // Attenuate lighting based on dist to water surface
+        // underWaterColor += responseCurve * L_waterSurface(kd, depth, ext));
+        // #if defined(UW_OLD_L_SURFACE_RGB)
+        // float3 l_surface = L_surface((1.0f+diffuseLightingSurface*exp(-ext*pointToSurface/2.0f))*kd, depth, pointToSurface, ext, dw);
+        // #else
+        // float3 l_surface = (1.0f+diffuseLightingSurface*exp(-ext*pointToSurface/2.0f))*L_surface(rgb2intensity(kd, i, maxWlB, maxWlG), depth, pointToSurface, ext, dw);
+        // #endif
+        float diffuseLightingIntensity = rgb2intensity(diffuseLightingSurface, i, maxWlB, maxWlG);
+        float l_surface = (1.0f+diffuseLightingIntensity*exp(-ext*pointToSurface/2.0f)) 
+                        * L_surface(rgb2intensity(kd, i, maxWlB, maxWlG), depth, pointToSurface, ext, dw);
+
+        #if defined(USE_D65_SUNLIGHT)
+        l_surface *= _SunSpectrumD65[i];
+        #endif
+
+        #if defined(SUPER_SURFACE)
+        l_surface *= 10;
+        #endif
+
+        underWaterColor += responseCurve * l_surface;
+        // underWaterColor += responseCurve * L_surface((1.0f+20.0f*diffuseLightingSurface*exp(-ext*pointToSurface/2.0f))*kd, depth, pointToSurface, ext, dw);
+
+      }
+      #if defined(SUPER_SURFACE)
+      else {
+        underWaterColor = float3(0,0,0);
+      }
+      #endif
+    }
+    
+    return underWaterColor / (float)nWls;
+    // return float3(1.0,0.7,0.5);
+}
+
+#endif
+
 
 float SkySpectrum(int iWl, uint nWls) {
     float i = (float)iWl / (float)nWls;
@@ -381,7 +528,7 @@ void UWEvaluatePbrAtmosphere(float3 worldSpaceCameraPos, float3 V, float distAlo
                            out float3 skyColor, out float3 skyOpacity)
 {
 
-    // V.y = -V.y; // Invert Y axis to match Unity's convention.
+    V.y = -V.y; // Invert Y axis to match Unity's convention.
 
     skyColor = skyOpacity = 0;
 
@@ -502,14 +649,14 @@ void UWEvaluatePbrAtmosphere(float3 worldSpaceCameraPos, float3 V, float distAlo
                             // tFrag = lightDist;
 
 
-                            color *= light.surfaceTint / 25500;
+                            color *= light.surfaceTint;// / 255;
                         }
                         else // Flare region.
                         {
                             float rsun = max(0, rad - radInner);
                             float wsun = saturate(1 - rsun * rcp(light.flareSize));
 
-                            color *= light.flareTint / 25500;
+                            color *= light.flareTint;// / 255;
                             scale *= SafePositivePow(wsun, light.flareFalloff);
                         }
 
@@ -611,55 +758,50 @@ void UWEvaluatePbrAtmosphere(float3 worldSpaceCameraPos, float3 V, float distAlo
 
 float3 ShadeWaterSurface(PositionInputs posInput, uint nWls, float3 normal, float3 w, float camToPoint, float camToSurface) 
 {
-    // TODO: arreglar normal, multiplicaciones bestias de L_reflection, L_refraction etc.
-    // if (length(normal)<0.1) normal = float3(0.0,1.0,0.0);
 
-    // normal *= -1.0;
+    // normal = normal.zxy; // why...
+    // normal = normal.yxz; // why...
 
-    // normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
-    // normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
-    // normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
-    // normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
+    // normal = float3(0,-1,0);
+    normal.y = -abs(normal.y);
+    if (abs(normal.y) < 0.1 || dot(normal, -w) < 0.0) {
+        normal.y = -0.3;
+        normal = normalize((normal+float3(0.0,-1.0,0.0))/2.0);
+        normal = normalize((normal+float3(0.0,-1.0,0.0))/2.0);
+        normal = normalize((normal+float3(0.0,-1.0,0.0))/2.0);
+    }
+    // normal = -normal;
 
-    // normal = -normalize(normal);
-    // normal = float3(0,1,0);
-    normal = normalize(normal.xzy);
-    normal.y = -normal.y;
-    // return (0.5 + 0.5 * normal);//* 100.0;
-    
-    // return -normal;
-    // normal = float3(0.0,1.0,0.0);
-    // normal = normal.xzy;
-    // normal.y = -normal.y;
+    // normal = float3(-normal.x, normal.z, -normal.y);
 
-    // return (0.5 + 0.5 * normal);//* 100.0;
-    // normal = float3(0,1,0);
-    float3 camDir = -normalize(w);
+    // return normal;
+    float3 camDir = normalize(w);
     float3 reflected = reflect(camDir, normalize(normal));
     float originToSurf = 0.1; // Origin of the reflection slightly below the water surface to avoid weird stuff
     float3 refracted = refract(camDir, normal, 1.33);//1/1.33);
 
+    // return refracted;
+
     float R0 = pow((1.0-1.33)/(1.0+1.33), 2.0f);
-    float cos = 1.0f - dot(camDir, normal);
+    // float cos = 1.0f - dot(camDir, normal);
+    float cos = dot(-camDir, normal);
     float fresnel = R0 + (1.0f - R0) * pow(cos, 5.0f); // Shlick's approximation
     // fresnel = 1.0 - fresnel;
-    float reflectedDist = 100000.0;
+    float reflectedDist = 1000000.0;
 
-
-
-    // float3 inputColor = float3(1,1,1);
-    // float3 skyLighting = EvaluateAtmosphericScattering(posInput, refracted, inputColor);
-
+    // return cos * 100;
+    // return fresnel;
     
     float3 skyOpacity;
-    float3 skyColor;// = float4(1,1,1,1);
-    // // EvaluateAtmosphericScattering(posInput, refracted, skyColor, volOpacity); // Premultiplied alpha
-    // skyColor = EvaluateAtmosphericScattering(posInput, refracted, skyColor);
-    // *******************************
+    float3 skyColor;
 
+    refracted = -refracted;
+    // refracted.y = -abs(refracted.y);
+    refracted.y = -min(0.15,refracted.y);
     UWEvaluatePbrAtmosphere(posInput.positionWS, 
                             // float3(0,-1,0),
                             refracted,
+                            // -w,
                             // TODO1: check this distance here (atmosphere path length)
                             10000, true, // rendersundisk
                            skyColor, skyOpacity);
@@ -667,14 +809,12 @@ float3 ShadeWaterSurface(PositionInputs posInput, uint nWls, float3 normal, floa
 
 
     // *******************************
-    skyColor *= 10000 * skyOpacity; // TODO1: fix these scalars!!
-
-    // return skyColor * skyOpacity * 100 * fresnel;
-    // skyColor = skyColor * volOpacity; //result.rgb = result.rgb * (1 - volOpacity) + volColor * result.a;
-
+    skyColor *= 10 *skyOpacity; 
+    // return skyColor * fresnel + (1.0-fresnel) * reflected;
     
     uint maxWlB = _WaterScatExtDw[2].w;
     uint maxWlG = _WaterScatExtDw[3].w;
+    // return camToPoint * 10;
         
         
     float3 underWaterColor = float3(0.0,0.0,0.0);
@@ -688,11 +828,15 @@ float3 ShadeWaterSurface(PositionInputs posInput, uint nWls, float3 normal, floa
 
       
       float L_camToSurface = L_medium(camDir, camToPoint, camToSurface, scat, ext, dw);
-      float L_reflection = L_medium(reflected, reflectedDist, originToSurf, scat, ext, dw);
+      float L_reflection = L_medium(-reflected, reflectedDist * 1, originToSurf, scat, ext, dw);
 
     //   float L_refraction = 200.0;//SkySpectrum(i, nWls);
 
       float L_refraction = rgb2intensity(skyColor.rgb, i, maxWlB, maxWlG);
+
+    //   float L_surface = exp(-ext * camToPoint) // Extinction up to the water surface
+    //                     * (fresnel * L_refraction + (1.0-fresnel) * L_reflection);
+    // fresnel = 0;
 
       float L_surface = exp(-ext * camToPoint) // Extinction up to the water surface
                         * (fresnel * L_refraction + (1.0-fresnel) * L_reflection);
@@ -707,7 +851,7 @@ float3 ShadeWaterSurface(PositionInputs posInput, uint nWls, float3 normal, floa
 
     }
     // return 2.0f * underWaterColor / (float)nWls;
-    return 2.0f * underWaterColor / (float)nWls;
+    return underWaterColor / (float)nWls;
 //     // return float3(1.0,0.7,0.5);
 
 }
@@ -716,17 +860,13 @@ float3 ShadeAboveWater(PositionInputs posInput, uint nWls, float3 normal, float3
 {
     
     
-    if (length(normal)<0.1) normal = float3(0.0,1.0,0.0);
-
-    // normal *= -1.0;
-    // TODO: weird wtuff in THIS function and in water surface distance (camToSurface doesnt seem to match actual surface plane)
-    // Fresnel or some angle is not ok
-
-    normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
-    normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
-    normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
-    normal = (normal + float3(0.0,1.0,0.0)) / 2.0;
-    normal = normalize(normal);
+    normal.y = abs(normal.y);
+    if (abs(normal.y) < 0.1 || dot(normal, -w) < 0.0) {
+        normal.y = 0.3;
+        normal = normalize((normal+float3(0.0,1.0,0.0))/2.0);
+        normal = normalize((normal+float3(0.0,1.0,0.0))/2.0);
+        normal = normalize((normal+float3(0.0,1.0,0.0))/2.0);
+    }
     // normal = float3(0.0,1.0,0.0);
     // normal = normal.xzy;
     // normal.y = -normal.y;
@@ -810,6 +950,9 @@ float3 ShadeAboveWater(PositionInputs posInput, uint nWls, float3 normal, float3
 //     // return float3(1.0,0.7,0.5);
 }
 
+
+// This is HDRP's single scattering integration function, modified to work with the water shader
+// (for example, removed the atmospheric fallback fog)
 void UWEvaluateSingleScattering(PositionInputs posInput, float3 V, out float3 color, out float3 opacity)
 {
     color = opacity = 0;
@@ -858,6 +1001,7 @@ void UWEvaluateSingleScattering(PositionInputs posInput, float3 V, out float3 co
         // ---------------------------------------------------------------------------------------
         float distDelta = fogFragDist - expFogStart;
 
+        #if defined(FALLBACK_FOG) // This adds an exponential fog that assumes we are in the atmosphere - we aren't
         if ((distDelta > 0))
         {
             // Apply the distant (fallback) fog.
@@ -880,15 +1024,7 @@ void UWEvaluateSingleScattering(PositionInputs posInput, float3 V, out float3 co
             volFog.rgb += trCamera * GetFogColor(V, fogFragDist) * GetCurrentExposureMultiplier() * volAlbedo * (1 - trFallback);
             volFog.a = 1 - (trCamera * trFallback);
         }
-
-        // ---------------------------------------------------------------------------------------
-
-
-
-        // volFog *= 1.0f; // TODO: valor
-                                  // como combinar esto con MS
-                                  // Esta funcion parece que solo se evalua en superficies :/
-                                  // Quitar el codigo de justo encima? (exponential fog)??
+        #endif
 
         // volFog *= 0.0f;
 
@@ -947,6 +1083,8 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
     PositionInputs posInput = GetPositionInput(pixelCoord.xy, _ScreenSize.zw, depth, UNITY_MATRIX_I_VP, UNITY_MATRIX_V, tileCoord);
 
 
+    float3 viewPosWS = GetCurrentViewPosition();
+
 
     bool isBackground = false;
     // For indirect case: we can still overlap inside a tile with the sky/background, reject it
@@ -967,10 +1105,27 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
 
     float3 V = GetWorldSpaceNormalizeViewDir(posInput.positionWS);
 
+
+    // const float3 viewWS = GetWorldSpaceNormalizeViewDir(posInput.positionWS);
+
+    // Decode the world space normal
+    NormalData normalData;
+    DecodeFromNormalBuffer(posInput.positionSS, normalData);
+    
+
+
     BSDFData bsdfData;
     BuiltinData builtinData;
     DECODE_FROM_GBUFFER(posInput.positionSS, featureFlags, bsdfData, builtinData);
     float3 kd = LOAD_TEXTURE2D_X(_GBufferTexture0, posInput.positionSS).rgb;
+
+
+    
+    // const float3 normal = bsdfData.normalWS;
+    // const float3 normal = bsdfData.geomNormalWS;
+    // const float3 normal = builtinData.normal;
+    const float3 normal = normalData.normalWS;
+
 
 
     // UpdateSurfaceDataFromNormalData(posInput.positionSS, bsdfData);
@@ -987,11 +1142,10 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
 
 #if defined(UW_ENABLE_L_SURFACE_COSINE)
     // Cosine attenuation for surfaces
-    float3 normal = bsdfData.normalWS;
     // float cosine = max(dot(normal,float3(0.0f,1.0f,0.0f)),0.0f);
     // kd *= ((cosine*2.0f/3.0f)+(1.0f/3.0f));
 
-    float cosine = max(dot(normal,float3(0.0f,1.0f,0.0f)),0.6f);
+    float cosine = max(dot(normal,float3(0.0f,1.0f,0.0f)),0.2f);
     kd *= cosine;
 #endif 
 
@@ -1006,21 +1160,27 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
     float3 diffuseLightingSurface = lightLoopOutput.diffuseLighting;
 
     bool isWaterSurface = false;
-    if (length(builtinData.bakeDiffuseLighting) > 0.01) {
+    // bool isWaterSurface = bsdfData.normalWS.y < 0.1;    
+    if (length(builtinData.bakeDiffuseLighting) > 0.5) {
         diffuseLightingSurface = builtinData.bakeDiffuseLighting;//float3(1000.0,0.0,0.0);
+                    
         isWaterSurface = true; // TODO: añadir a ShadeUnderwater!!!
     }
 
-    // Alias
-    // float3 diffuseLighting = lightLoopOutput.diffuseLighting;
-    // float3 specularLighting = lightLoopOutput.specularLighting;
 
+    #if defined(OLD_FRAG_DISTANCE)
     float T = length(posInput.positionWS); // WS here is actually camera relative
+    #else
+    float T = distance(posInput.positionWS, GetCurrentViewPosition());
+    #endif
 
     // float camToSurface = abs(_CamToSurface);
     // camToSurface = 1.0;
 
     float camToSurface = _WaterScatExtDw[0].w; // Hack to fix the variable
+
+
+
 
     bool aboveWater = false;
     if (camToSurface < -2) {
@@ -1030,8 +1190,8 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
 
     }
 
-
-    float pointToSurface = -posInput.positionWS.y+camToSurface;
+    // Vertical distance from the shaded point to the water surface:
+    float pointToSurface = -posInput.positionWS.y+camToSurface; 
 
     float distThreshold = 0.1f;
 
@@ -1039,6 +1199,7 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
 
     uint nWls = (int)_WaterScatExtDw[1].w; // Number of wavelengths
 
+    
     float3 diffuseLighting = float3(0.0,0.0,0.0);
 
     if (aboveWater) {
@@ -1053,9 +1214,10 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
             float3 skyOpacity;
             float3 skyColor;
             
-
-            UWEvaluatePbrAtmosphere(posInput.positionWS, 
-                                    -camDir,
+            float3 dir = -camDir;
+            dir.y = -dir.y;
+            UWEvaluatePbrAtmosphere(float3(0,0,0),//posInput.positionWS, 
+                                    dir,
                                     10000, true, // rendersundisk
                                 skyColor, skyOpacity);
             diffuseLighting = skyColor * skyOpacity / 10;
@@ -1072,7 +1234,7 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
         }
         // pointToSurface > distThreshold || 
         else {
-            float3 normal = bsdfData.normalWS;
+            
             
             diffuseLighting = ShadeAboveWater(posInput, nWls, normal, camDir, T, camToSurface);
             // diffuseLighting = float3(10000,0,0);
@@ -1081,35 +1243,24 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
             // diffuseLighting = float3(10,0,0);
 
     }
-    else if (!isBackground && pointToSurface < distThreshold ) { // pointToSurface < distThreshold
-        // float theta = acos(dot(V,bsdfData.geom));
-        // diffuseLighting = (0.1+pointToSurface) / 0.1;//ShadeWaterSurface(nWls, V, T, posInput, kd, camToSurface, pointToSurface, isBackground, diffuseLightingSurface);
-        // diffuseLighting = 0.5+0.5*bsdfData.normalWS;
-        // diffuseLighting = posInput.positionWS.y/ 100;
-        // diffuseLighting=diffuseLightingSurface*0.0010;
-        // diffuseLighting = 1 +  0.5 * bsdfData.normalWS;
+    // else if (!isBackground && pointToSurface < distThreshold ) { // pointToSurface < distThreshold
+    else if (!isBackground && isWaterSurface ) { // pointToSurface < distThreshold
 
-        float3 normal = bsdfData.normalWS;
+
         float3 camDir = -V;
         
-        // float3 refracted = refract(camDir, normal, 1.33);
-
-        // T = 10000.0;
         isBackground = true;
-        // float pointToSurf2 = 0.1; // Some distance to avoid artifacts
-        // kd = 0.0*float3(1.0,1.0,1.0);
 
-        // diffuseLighting = 1.0 * ShadeUnderwater(nWls, reflected, T, kd, pointToSurf2, pointToSurf2, isBackground, float3(0.0,0.0,0.0));
+        // SUPERSURFACE
+        #if !defined(SUPER_SURFACE)
+        diffuseLighting = ShadeWaterSurface(posInput, nWls, bsdfData.geomNormalWS,//normal, //
+                             camDir, T, camToSurface);
+        #endif
 
-            
-
-        diffuseLighting = ShadeWaterSurface(posInput, nWls, normal, camDir, T, camToSurface);
-
-        // diffuseLighting = (builtinData.bakeDiffuseLighting.rgb-0.9) * 1;
-        // I want to use the light cookie to generate normals somehow. I was trying the displacement map but it doesnt seem to work :(
     }
     else {
         diffuseLighting = ShadeUnderwater(nWls, V, T, kd, camToSurface, pointToSurface, isBackground, diffuseLightingSurface);
+
     }
     // float3 diffuseLighting = ShadeUnderwater(nWls, V, T, posInput, kd, camToSurface, pointToSurface, isBackground, diffuseLightingSurface);
 
@@ -1124,22 +1275,35 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
     // -----------------------------------------------
 
 
-    // TODO: mezclar bien la iluminacion especular, ahora mismo la superficie del agua queda muy rara con estas dos lineas:
-    // float3 specularLighting = lightLoopOutput.specularLighting * 3e-2; // float3(0.0,0.0,0.0);
-    // if (isBackground||isWaterSurface) specularLighting = float3(0.0,0.0,0.0);
+
     
     float3 specularLighting = float3(0.0,0.0,0.0);
 
 
-#if defined(DO_XYZ_TO_RGB)
-    diffuseLighting = xyz2rgb(diffuseLighting);
-#endif    
+    // Check if our response curve is XYZ (kind of hacky)
+    float3 xyzref = float3(0.0191097, 0.0020044, 0.0860109); // from the csv
+    float3 responseWl0 = _ResponseCurve[0].xyz;
+
+    bool isXYZ = length(xyzref - responseWl0) < 0.005;
+
+    if (isXYZ) {
+        diffuseLighting = 100*xyz2rgb(diffuseLighting);
+        // diffuseLighting = float3(100,0,0);
+    }
+
+    // #if defined(DO_XYZ_TO_RGB)
+    // Test xyz conversion:
+    //     // diffuseLighting = float3(0.4361, 0.2225, 0.0139); // Red
+    //     // diffuseLighting = float3(0.1197, 0.1707, 0.1753); // blue-greenish
+        
+    //     diffuseLighting = 100*xyz2rgb(diffuseLighting);
+    // #endif    
 
     diffuseLighting *= GetCurrentExposureMultiplier();
     specularLighting *= GetCurrentExposureMultiplier();
 
-#if defined(UW_DO_SINGLE_SCATTERING)
-    // Adapted from Water/WaterLighting.compute: WaterSurface, but it looks strange here :(
+#if !defined(OLD_UW_DO_SINGLE_SCATTERING)
+    // Adapted from Water/WaterLighting.compute:
     // Evaluate the fog and combine
     float3 volColor, volOpacity;
     UWEvaluateSingleScattering(posInput, V, volColor, volOpacity);
@@ -1161,10 +1325,10 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
 
     // Attenuate the single scat, bc Unity doesnt actually extinguish the incident light
     // volOpacity *= GetSingleScatteringExtinction(V,T,camToSurface,pointToSurface,isBackground);
-    volOpacity *= GetSSExt(nWls, V, camToSurface, pointToSurface);
+    volOpacity *= GetSSExt(nWls, V, T, camToSurface, pointToSurface);
 
     // 4
-    diffuseLighting += volOpacity*volColor;
+    diffuseLighting += volOpacity*volColor * 0.01;
 
 
 #endif
@@ -1175,6 +1339,11 @@ void SHADE_OPAQUE_ENTRY(uint3 dispatchThreadId : SV_DispatchThreadID, uint2 grou
     //     diffuseLighting = skyLighting;
 
     // }
+
+
+    // diffuseLighting = float3(0,0,0);
+
+    // diffuseLighting = max(float3(0,0,0),-V);
 
 
 #if defined(DO_MY_TONEMAPPING)

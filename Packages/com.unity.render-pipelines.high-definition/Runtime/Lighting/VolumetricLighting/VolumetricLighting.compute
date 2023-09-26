@@ -266,6 +266,9 @@ VoxelLighting EvaluateVoxelLightingDirectional(LightLoopContext context, uint fe
 
             // Compute the amount of in-scattered radiance.
             // Note: the 'weight' accounts for transmittance from 't0' to 't'.
+            // weight *= TransmittanceHomogeneousMedium(extinction, abs(posInput.positionWS.y));
+            // I would have to make the spectral computations here if we want spectral single scat...
+
             lighting.radianceNoPhase += (weight * lightColor.rgb);
             lighting.radianceComplete += (weight * lightColor.rgb) * phase;
         }

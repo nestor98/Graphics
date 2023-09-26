@@ -89,7 +89,8 @@ namespace UnityEngine.Rendering.HighDefinition
 
                 // NEw for UW + sky:
                 
-                TextureHandle skyColorBuffer = CreateColorBuffer(m_RenderGraph, hdCamera, msaa);
+                // TextureHandle skyColorBuffer = CreateColorBuffer(m_RenderGraph, hdCamera, msaa);
+
                 // DrawFullScreen();
                 
 #if ENABLE_VIRTUALTEXTURES
@@ -227,10 +228,23 @@ namespace UnityEngine.Rendering.HighDefinition
                     // Other option: separate pass: scary
                     // , volumetricLighting
                     if (!doRGBRendering) {
+                        // colorBuffer = UWRenderWaterSurf(m_RenderGraph, hdCamera, colorBuffer, prepassOutput.resolvedNormalBuffer, vtFeedbackBuffer, currentColorPyramid, volumetricLighting, rayCountTexture, m_SkyManager.GetSkyReflection(hdCamera), gpuLightListOutput, ref prepassOutput,
+                        //     shadowResult, cullingResults, customPassCullingResults, aovRequest, aovCustomPassBuffers);
 
-                        UWRenderSky(m_RenderGraph, hdCamera, skyColorBuffer, volumetricLighting, prepassOutput.depthBuffer, msaa ? prepassOutput.depthAsColor : prepassOutput.depthPyramidTexture);
 
-                        UWRenderDeferredLighting(m_RenderGraph, hdCamera, colorBuffer, skyColorBuffer, prepassOutput.depthBuffer, prepassOutput.depthPyramidTexture, lightingBuffers, prepassOutput.gbuffer, shadowResult, gpuLightListOutput, volumetricLighting);
+                            
+                        // // Send all the geometry graphics buffer to client systems if required (must be done after the pyramid and before the transparent depth pre-pass)
+                        // SendGeometryGraphicsBuffers(m_RenderGraph, prepassOutput.normalBuffer, prepassOutput.depthPyramidTexture, hdCamera);
+
+                        // UWRenderSky(m_RenderGraph, hdCamera, colorBuffer, volumetricLighting, prepassOutput.depthBuffer, msaa ? prepassOutput.depthAsColor : prepassOutput.depthPyramidTexture);
+                        // sunOcclusionTexture = RenderVolumetricClouds(m_RenderGraph, hdCamera, colorBuffer, prepassOutput.depthPyramidTexture, prepassOutput.motionVectorsBuffer, volumetricLighting, maxZMask);
+
+                        // RenderTransparentDepthPrepass(m_RenderGraph, hdCamera, prepassOutput, cullingResults);
+
+                        // var waterGBuffer = RenderWaterGBuffer(m_RenderGraph, hdCamera, prepassOutput.depthBuffer, prepassOutput.normalBuffer, currentColorPyramid, prepassOutput.depthPyramidTexture);
+
+
+                        UWRenderDeferredLighting(m_RenderGraph, hdCamera, colorBuffer, prepassOutput.depthBuffer, prepassOutput.depthPyramidTexture, lightingBuffers, prepassOutput.gbuffer, shadowResult, gpuLightListOutput, volumetricLighting);
                         // colorBuffer = skyColorBuffer;                    
                     }
                     else {
@@ -241,7 +255,7 @@ namespace UnityEngine.Rendering.HighDefinition
 
                     ApplyCameraMipBias(hdCamera);
                     //MyChanges: no Forward opaque?
-                    RenderForwardOpaque(m_RenderGraph, hdCamera, colorBuffer, lightingBuffers, gpuLightListOutput, prepassOutput.depthBuffer, vtFeedbackBuffer, shadowResult, prepassOutput.dbuffer, cullingResults);
+                    // sRenderForwardOpaque(m_RenderGraph, hdCamera, colorBuffer, lightingBuffers, gpuLightListOutput, prepassOutput.depthBuffer, vtFeedbackBuffer, shadowResult, prepassOutput.dbuffer, cullingResults);
                     ResetCameraMipBias(hdCamera);
 
                     if (aovRequest.isValid)
@@ -262,6 +276,8 @@ namespace UnityEngine.Rendering.HighDefinition
                         //              ver ClearLightLists en LightLoop.cs
 
 
+
+                    // TEST - 20/09: move this from here to before deferred
                     // Send all the geometry graphics buffer to client systems if required (must be done after the pyramid and before the transparent depth pre-pass)
                     SendGeometryGraphicsBuffers(m_RenderGraph, prepassOutput.normalBuffer, prepassOutput.depthPyramidTexture, hdCamera);
 
@@ -270,8 +286,8 @@ namespace UnityEngine.Rendering.HighDefinition
                     // No need for old stencil values here since from transparent on different features are tagged
                     ClearStencilBuffer(m_RenderGraph, hdCamera, prepassOutput.depthBuffer);
 
-                    colorBuffer = RenderTransparency(m_RenderGraph, hdCamera, colorBuffer, prepassOutput.resolvedNormalBuffer, vtFeedbackBuffer, currentColorPyramid, volumetricLighting, rayCountTexture, m_SkyManager.GetSkyReflection(hdCamera), gpuLightListOutput, ref prepassOutput,
-                        shadowResult, cullingResults, customPassCullingResults, aovRequest, aovCustomPassBuffers);
+                    // colorBuffer = RenderTransparency(m_RenderGraph, hdCamera, colorBuffer, prepassOutput.resolvedNormalBuffer, vtFeedbackBuffer, currentColorPyramid, volumetricLighting, rayCountTexture, m_SkyManager.GetSkyReflection(hdCamera), gpuLightListOutput, ref prepassOutput,
+                    //     shadowResult, cullingResults, customPassCullingResults, aovRequest, aovCustomPassBuffers);
 
                     uiBuffer = RenderTransparentUI(m_RenderGraph, hdCamera, prepassOutput.depthBuffer);
 
@@ -465,7 +481,7 @@ namespace UnityEngine.Rendering.HighDefinition
             // if (m_CurrentDebugDisplaySettings.DebugHideSky(hdCamera))
             //     return;
 
-            m_SkyManager.RenderSky(renderGraph, hdCamera, colorBuffer, depthStencilBuffer, "Render Sky", ProfilingSampler.Get(HDProfileId.RenderSky));
+            // m_SkyManager.RenderSky(renderGraph, hdCamera, colorBuffer, depthStencilBuffer, "Render Sky", ProfilingSampler.Get(HDProfileId.RenderSky));
             // m_SkyManager.RenderOpaqueAtmosphericScattering(renderGraph, hdCamera, colorBuffer, depthTexture, volumetricLighting, depthStencilBuffer);
         }
 

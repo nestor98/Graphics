@@ -17,9 +17,20 @@ using System.Linq;
 // Medium is wl, scat, ext, dw
 public class SpectralData
 {
+    // Holds spectra: 
+    // medium coefficients (scat, ext, kd)
+    // sensor response curve (r, g, b)
+    // 
+    // Both are read from csv files, and interpolated to a given number of wavelengths
+    // so that they span the same range of wavelengths (overlap of the original ranges)
+
+    // First: original, second: interpolated 
     private List<List<float>> mediumSpectralCoefs, mediumSpectralCoefsInterpolated; // NOTE: lists in c# actually have random access (they are arrays internally)
     private List<List<float>> cameraResponseCurve, cameraResponseCurveInterpolated;
-    // private int nWavelenghts;
+    // We only use the interpolated versions for rendering, we keep the original ones to be ablo to change the 
+    // number of wavelengths and re-interpolate
+
+    // Note: The implementation could be parallelized greatly, but there is no need as it is not done in the rendering loop
 
     private char sep = ',';
 
@@ -95,6 +106,7 @@ public class SpectralData
     // 
     // Note: a better way to do this would be to average more values, 
     // especially if nWavelengths is much lower than the original number of wls
+    // (if nWavelengths >= original, it's fine)
     public void SetNWavelengths(int nWavelengths) {
       // Debug.Log("Setting " +  nWavelengths);
       // Debug.Log(". Original curves:");
@@ -103,9 +115,9 @@ public class SpectralData
       cameraResponseCurveInterpolated = new List<List<float>>();
       mediumSpectralCoefsInterpolated = new List<List<float>>();
       for(int i = 0; i < 4; i++)
-      {
-        cameraResponseCurveInterpolated.Add(new List<float>());
-        mediumSpectralCoefsInterpolated.Add(new List<float>());
+      { // 4 channels, first wl, others 
+        cameraResponseCurveInterpolated.Add(new List<float>()); // wl r g b
+        mediumSpectralCoefsInterpolated.Add(new List<float>()); // wl scat ext dw
       }
       // Set up wavelengths:
       float minwl = Mathf.Max(cameraResponseCurve[0].First(), mediumSpectralCoefs[0].First()),

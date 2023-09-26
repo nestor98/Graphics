@@ -104,7 +104,7 @@ namespace UnityEngine.Rendering.HighDefinition
             RenderGraph renderGraph,
             HDCamera hdCamera,
             TextureHandle colorBuffer,
-            TextureHandle skyBuffer,
+            // TextureHandle skyBuffer,
             TextureHandle depthStencilBuffer,
             TextureHandle depthPyramidTexture,
             //TextureHandle volumetricLightingTexture,
@@ -152,7 +152,7 @@ namespace UnityEngine.Rendering.HighDefinition
                 passData.splitLightingMat = GetDeferredLightingMaterial(true /*split lighting*/, passData.enableShadowMasks, debugDisplayOrSceneLightOff);
                 passData.regularLightingMat = GetDeferredLightingMaterial(false /*split lighting*/, passData.enableShadowMasks, debugDisplayOrSceneLightOff);
 
-                passData.skyLighting = builder.ReadTexture(skyBuffer);
+                // passData.skyLighting = builder.ReadTexture(skyBuffer);
 
                 passData.colorBuffer = builder.WriteTexture(colorBuffer);
                 // passData.colorBuffer = builder.WriteTexture(colorBuffer);
